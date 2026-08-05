@@ -21,7 +21,7 @@ threading.Thread(target=run_dummy_server, daemon=True).start()
 # API CREDENTIALS & CONFIGURATION
 # ==============================================================
 API_KEY = '18b4a2eda90d0c3e16e9992db3e538f4'
-SECRET_KEY = 'YOUR_SECRET_KEY_HERE'  # <--- Apni real Secret Key yahan paste karein
+SECRET_KEY = '18b4a2eda90d0c3e16e9992db3e538f4'  # <--- Apni real Secret Key yahan paste karein
 
 exchange = ccxt.delta({
     'apiKey': API_KEY,
