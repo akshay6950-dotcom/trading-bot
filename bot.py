@@ -8,7 +8,7 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.end_headers()
-        self.wfile.write(b"Bot is Running 24/7 (Dual-Side Active)!")
+        self.wfile.write(b"Bot is Running 24/7 (5x Margin Dual-Side Active)!")
     def do_HEAD(self):
         self.send_response(200)
         self.end_headers()
@@ -31,6 +31,7 @@ exchange = ccxt.delta({
     'enableRateLimit': True,
 })
 
+LEVERAGE = 5              # Strictly 5x Margin
 TIMEFRAME = '5m'
 INITIAL_SL_PCT = 0.008     # Initial SL: 0.8%
 TRAILING_STEP_PCT = 0.003  # Trailing Step: 0.3%
@@ -42,6 +43,14 @@ CONFIG = {
 }
 
 active_positions = {}
+
+def set_leverage_for_symbols():
+    for symbol in CONFIG:
+        try:
+            exchange.set_leverage(LEVERAGE, symbol)
+            print(f"[{symbol}] Leverage successfully set to {LEVERAGE}x", flush=True)
+        except Exception as e:
+            print(f"[{symbol}] Leverage setting notice: {e}", flush=True)
 
 def get_ticker_price_and_candles(symbol):
     ticker = exchange.fetch_ticker(symbol)
@@ -123,30 +132,31 @@ def run_quick_bot():
                 signals = [check_sma(ohlcv), check_rsi(ohlcv), check_breakout(ohlcv), check_momentum(ohlcv)]
                 buy_votes, sell_votes = signals.count('BUY'), signals.count('SELL')
 
-                # BUY ENTRY (Long)
+                # BUY ENTRY (Long 5x)
                 if buy_votes >= 1 and sell_votes == 0:
                     sl = curr_price * (1 - INITIAL_SL_PCT)
                     tp = curr_price * (1 + TARGET_TP_PCT)
-                    print(f">>> BUY ENTRY (LONG): {symbol} | Price: {curr_price} | TP (1%): {tp:.2f} | SL: {sl:.2f} <<<", flush=True)
+                    print(f">>> BUY ENTRY (LONG 5x): {symbol} | Price: {curr_price} | TP (1%): {tp:.2f} | SL: {sl:.2f} <<<", flush=True)
                     exchange.create_market_buy_order(symbol, qty)
                     active_positions[symbol] = {'side': 'BUY', 'entry': curr_price, 'sl': sl, 'tp': tp, 'highest_price': curr_price}
 
-                # SELL ENTRY (Short)
+                # SELL ENTRY (Short 5x)
                 elif sell_votes >= 1 and buy_votes == 0:
                     sl = curr_price * (1 + INITIAL_SL_PCT)
                     tp = curr_price * (1 - TARGET_TP_PCT)
-                    print(f">>> SELL ENTRY (SHORT): {symbol} | Price: {curr_price} | TP (1%): {tp:.2f} | SL: {sl:.2f} <<<", flush=True)
+                    print(f">>> SELL ENTRY (SHORT 5x): {symbol} | Price: {curr_price} | TP (1%): {tp:.2f} | SL: {sl:.2f} <<<", flush=True)
                     exchange.create_market_sell_order(symbol, qty)
                     active_positions[symbol] = {'side': 'SELL', 'entry': curr_price, 'sl': sl, 'tp': tp, 'lowest_price': curr_price}
 
                 else:
-                    print(f"[{symbol}] Scanning Market... Price: {curr_price} | BUY Signals: {buy_votes} | SELL Signals: {sell_votes}", flush=True)
+                    print(f"[{symbol}] Scanning Market (5x)... Price: {curr_price} | BUY: {buy_votes} | SELL: {sell_votes}", flush=True)
 
         except Exception as e:
             print(f"Error on {symbol}: {e}", flush=True)
 
 if __name__ == '__main__':
-    print("Quick-Target 1% Profit Bot Active (Dual-Side)...", flush=True)
+    print("Quick-Target 1% Profit Bot Active (5x Margin Only)...", flush=True)
+    set_leverage_for_symbols()
     while True:
         run_quick_bot()
         time.sleep(60)
