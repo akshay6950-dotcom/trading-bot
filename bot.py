@@ -8,7 +8,7 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.end_headers()
-        self.wfile.write(b"Bot is Running 24/7!")
+        self.wfile.write(b"Bot is Running 24/7 (Dual-Side Active)!")
     def do_HEAD(self):
         self.send_response(200)
         self.end_headers()
@@ -82,6 +82,8 @@ def run_quick_bot():
 
             if symbol in active_positions:
                 pos = active_positions[symbol]
+                
+                # LONG POSITION MANAGEMENT
                 if pos['side'] == 'BUY':
                     if curr_price > pos['highest_price'] * (1 + TRAILING_STEP_PCT):
                         pos['highest_price'] = curr_price
@@ -89,12 +91,28 @@ def run_quick_bot():
                         print(f"[{symbol}] Trailing SL Updated -> {pos['sl']:.2f}", flush=True)
 
                     if curr_price <= pos['sl']:
-                        print(f"[{symbol}] SL Hit! Exit Position.", flush=True)
+                        print(f"[{symbol}] SL Hit! Exit Long.", flush=True)
                         exchange.create_market_sell_order(symbol, qty)
                         del active_positions[symbol]
                     elif curr_price >= pos['tp']:
-                        print(f"[{symbol}] Quick 1% Target Hit! Profit Booked.", flush=True)
+                        print(f"[{symbol}] Quick 1% Target Hit! Long Profit Booked.", flush=True)
                         exchange.create_market_sell_order(symbol, qty)
+                        del active_positions[symbol]
+
+                # SHORT POSITION MANAGEMENT
+                elif pos['side'] == 'SELL':
+                    if curr_price < pos['lowest_price'] * (1 - TRAILING_STEP_PCT):
+                        pos['lowest_price'] = curr_price
+                        pos['sl'] = curr_price * (1 + INITIAL_SL_PCT)
+                        print(f"[{symbol}] Trailing SL Updated -> {pos['sl']:.2f}", flush=True)
+
+                    if curr_price >= pos['sl']:
+                        print(f"[{symbol}] SL Hit! Exit Short.", flush=True)
+                        exchange.create_market_buy_order(symbol, qty)
+                        del active_positions[symbol]
+                    elif curr_price <= pos['tp']:
+                        print(f"[{symbol}] Quick 1% Target Hit! Short Profit Booked.", flush=True)
+                        exchange.create_market_buy_order(symbol, qty)
                         del active_positions[symbol]
 
             else:
@@ -105,20 +123,30 @@ def run_quick_bot():
                 signals = [check_sma(ohlcv), check_rsi(ohlcv), check_breakout(ohlcv), check_momentum(ohlcv)]
                 buy_votes, sell_votes = signals.count('BUY'), signals.count('SELL')
 
+                # BUY ENTRY (Long)
                 if buy_votes >= 1 and sell_votes == 0:
                     sl = curr_price * (1 - INITIAL_SL_PCT)
                     tp = curr_price * (1 + TARGET_TP_PCT)
-                    print(f">>> BUY ENTRY: {symbol} | Price: {curr_price} | TP (1%): {tp:.2f} | SL: {sl:.2f} <<<", flush=True)
+                    print(f">>> BUY ENTRY (LONG): {symbol} | Price: {curr_price} | TP (1%): {tp:.2f} | SL: {sl:.2f} <<<", flush=True)
                     exchange.create_market_buy_order(symbol, qty)
                     active_positions[symbol] = {'side': 'BUY', 'entry': curr_price, 'sl': sl, 'tp': tp, 'highest_price': curr_price}
+
+                # SELL ENTRY (Short)
+                elif sell_votes >= 1 and buy_votes == 0:
+                    sl = curr_price * (1 + INITIAL_SL_PCT)
+                    tp = curr_price * (1 - TARGET_TP_PCT)
+                    print(f">>> SELL ENTRY (SHORT): {symbol} | Price: {curr_price} | TP (1%): {tp:.2f} | SL: {sl:.2f} <<<", flush=True)
+                    exchange.create_market_sell_order(symbol, qty)
+                    active_positions[symbol] = {'side': 'SELL', 'entry': curr_price, 'sl': sl, 'tp': tp, 'lowest_price': curr_price}
+
                 else:
-                    print(f"[{symbol}] Scanning Market... Price: {curr_price} | BUY Signals: {buy_votes}", flush=True)
+                    print(f"[{symbol}] Scanning Market... Price: {curr_price} | BUY Signals: {buy_votes} | SELL Signals: {sell_votes}", flush=True)
 
         except Exception as e:
             print(f"Error on {symbol}: {e}", flush=True)
 
 if __name__ == '__main__':
-    print("Quick-Target 1% Profit Bot Active...", flush=True)
+    print("Quick-Target 1% Profit Bot Active (Dual-Side)...", flush=True)
     while True:
         run_quick_bot()
         time.sleep(60)
