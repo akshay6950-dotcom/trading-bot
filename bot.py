@@ -3,12 +3,12 @@ import threading
 import ccxt
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
-# 1. Dummy Web Server for Render Keep-Alive
+# 1. Keep-Alive Web Server
 class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.end_headers()
-        self.wfile.write(b"Bot is Running 24/7 (5x Dual-Side Active)!")
+        self.wfile.write(b"High Win-Rate Scalping Bot (1 Trade Per Coin Limit Active)!")
     def do_HEAD(self):
         self.send_response(200)
         self.end_headers()
@@ -31,58 +31,48 @@ exchange = ccxt.delta({
     'enableRateLimit': True,
 })
 
-LEVERAGE = 5
-TIMEFRAME = '5m'
-INITIAL_SL_PCT = 0.008     # Initial SL: 0.8%
-TRAILING_STEP_PCT = 0.003  # Trailing Step: 0.3%
-TARGET_TP_PCT = 0.010      # Target: 1.0%
+TIMEFRAME = '3m'           # 3-Minute chart for quick scalping
+INITIAL_SL_PCT = 0.005     # Strict SL: 0.5% (Max Capital Safety)
+TARGET_TP_PCT = 0.008      # Quick TP: 0.8% (High Win Rate)
 
 CONFIG = {
     'BTC/USDT': {'quantity': 0.045},
     'SOL/USDT': {'quantity': 10.0}
 }
 
+# Stores active trades (Max 1 position per coin)
 active_positions = {}
-
-def set_leverage_safely():
-    for symbol in CONFIG:
-        try:
-            exchange.set_leverage(LEVERAGE, symbol)
-            print(f"[{symbol}] Leverage set to {LEVERAGE}x", flush=True)
-        except Exception:
-            # Fallback: Exchange par manually set 5x leverage use hoga
-            print(f"[{symbol}] Using pre-set Exchange Leverage (5x Target)", flush=True)
 
 def get_ticker_price_and_candles(symbol):
     ticker = exchange.fetch_ticker(symbol)
     curr_price = ticker['last']
-    ohlcv = exchange.fetch_ohlcv(symbol, TIMEFRAME, limit=50)
-    if not ohlcv or len(ohlcv) < 30:
+    ohlcv = exchange.fetch_ohlcv(symbol, TIMEFRAME, limit=30)
+    if not ohlcv or len(ohlcv) < 20:
         return curr_price, None
     return curr_price, ohlcv
 
-def check_sma(ohlcv):
+# COMBINED HIGH-ACCURACY SCALPING STRATEGY
+def analyze_scalp_signal(ohlcv):
     closes = [c[4] for c in ohlcv]
-    sma_fast, sma_slow = sum(closes[-10:]) / 10, sum(closes[-30:]) / 30
-    return 'BUY' if sma_fast > sma_slow else ('SELL' if sma_fast < sma_slow else None)
-
-def check_rsi(ohlcv):
-    closes = [c[4] for c in ohlcv]
+    
+    # 1. EMA Trend Check (EMA 9 vs EMA 21)
+    ema9 = sum(closes[-9:]) / 9
+    ema21 = sum(closes[-21:]) / 21
+    
+    # 2. RSI Check (14 Period)
     gains = [max(closes[-i] - closes[-i-1], 0) for i in range(1, 15)]
     losses = [max(-(closes[-i] - closes[-i-1]), 0) for i in range(1, 15)]
     avg_gain, avg_loss = sum(gains) / 14, sum(losses) / 14
     if avg_loss == 0: return None
     rsi = 100 - (100 / (1 + (avg_gain / avg_loss)))
-    return 'BUY' if rsi < 38 else ('SELL' if rsi > 62 else None)
 
-def check_breakout(ohlcv):
-    highs, lows = [c[2] for c in ohlcv[-11:-1]], [c[3] for c in ohlcv[-11:-1]]
-    curr = ohlcv[-1][4]
-    return 'BUY' if curr > max(highs) else ('SELL' if curr < min(lows) else None)
-
-def check_momentum(ohlcv):
-    change = ((ohlcv[-1][4] - ohlcv[-6][4]) / ohlcv[-6][4]) * 100
-    return 'BUY' if change > 0.3 else ('SELL' if change < -0.3 else None)
+    # Entry Logic (Trend + Momentum)
+    if ema9 > ema21 and rsi > 45 and rsi < 65:
+        return 'BUY'
+    elif ema9 < ema21 and rsi < 55 and rsi > 35:
+        return 'SELL'
+    
+    return None
 
 def run_quick_bot():
     for symbol, settings in CONFIG.items():
@@ -90,74 +80,64 @@ def run_quick_bot():
             qty = settings['quantity']
             curr_price, ohlcv = get_ticker_price_and_candles(symbol)
 
+            # AGAR POSITION ALREADY OPEN HAI (STRICT LIMIT: MAXIMUM 1 TRADE PER COIN)
             if symbol in active_positions:
                 pos = active_positions[symbol]
                 
                 # LONG POSITION MANAGEMENT
                 if pos['side'] == 'BUY':
-                    if curr_price > pos['highest_price'] * (1 + TRAILING_STEP_PCT):
-                        pos['highest_price'] = curr_price
-                        pos['sl'] = curr_price * (1 - INITIAL_SL_PCT)
-                        print(f"[{symbol}] Trailing SL Updated -> {pos['sl']:.2f}", flush=True)
-
                     if curr_price <= pos['sl']:
                         print(f"[{symbol}] SL Hit! Exit Long.", flush=True)
                         exchange.create_market_sell_order(symbol, qty)
                         del active_positions[symbol]
                     elif curr_price >= pos['tp']:
-                        print(f"[{symbol}] Quick 1% Target Hit! Long Profit Booked.", flush=True)
+                        print(f"[{symbol}] Target Hit! Long Profit Booked.", flush=True)
                         exchange.create_market_sell_order(symbol, qty)
                         del active_positions[symbol]
 
                 # SHORT POSITION MANAGEMENT
                 elif pos['side'] == 'SELL':
-                    if curr_price < pos['lowest_price'] * (1 - TRAILING_STEP_PCT):
-                        pos['lowest_price'] = curr_price
-                        pos['sl'] = curr_price * (1 + INITIAL_SL_PCT)
-                        print(f"[{symbol}] Trailing SL Updated -> {pos['sl']:.2f}", flush=True)
-
                     if curr_price >= pos['sl']:
                         print(f"[{symbol}] SL Hit! Exit Short.", flush=True)
                         exchange.create_market_buy_order(symbol, qty)
                         del active_positions[symbol]
                     elif curr_price <= pos['tp']:
-                        print(f"[{symbol}] Quick 1% Target Hit! Short Profit Booked.", flush=True)
+                        print(f"[{symbol}] Target Hit! Short Profit Booked.", flush=True)
                         exchange.create_market_buy_order(symbol, qty)
                         del active_positions[symbol]
 
+            # AGAR COIN ME KOI ACTIVE TRADE NAHI HAI TABHI NAYA TRADE LEGA
             else:
                 if ohlcv is None:
                     print(f"[{symbol}] Price: {curr_price} | Scanning market...", flush=True)
                     continue
 
-                signals = [check_sma(ohlcv), check_rsi(ohlcv), check_breakout(ohlcv), check_momentum(ohlcv)]
-                buy_votes, sell_votes = signals.count('BUY'), signals.count('SELL')
+                signal = analyze_scalp_signal(ohlcv)
 
-                # BUY ENTRY (Long)
-                if buy_votes >= 1 and sell_votes == 0:
+                # BUY ENTRY (LONG)
+                if signal == 'BUY':
                     sl = curr_price * (1 - INITIAL_SL_PCT)
                     tp = curr_price * (1 + TARGET_TP_PCT)
-                    print(f">>> BUY ENTRY (LONG): {symbol} | Price: {curr_price} | TP (1%): {tp:.2f} | SL: {sl:.2f} <<<", flush=True)
+                    print(f">>> BUY ENTRY (LONG): {symbol} | Price: {curr_price} | TP: {tp:.2f} | SL: {sl:.2f} <<<", flush=True)
                     exchange.create_market_buy_order(symbol, qty)
-                    active_positions[symbol] = {'side': 'BUY', 'entry': curr_price, 'sl': sl, 'tp': tp, 'highest_price': curr_price}
+                    active_positions[symbol] = {'side': 'BUY', 'entry': curr_price, 'sl': sl, 'tp': tp}
 
-                # SELL ENTRY (Short)
-                elif sell_votes >= 1 and buy_votes == 0:
+                # SELL ENTRY (SHORT)
+                elif signal == 'SELL':
                     sl = curr_price * (1 + INITIAL_SL_PCT)
                     tp = curr_price * (1 - TARGET_TP_PCT)
-                    print(f">>> SELL ENTRY (SHORT): {symbol} | Price: {curr_price} | TP (1%): {tp:.2f} | SL: {sl:.2f} <<<", flush=True)
+                    print(f">>> SELL ENTRY (SHORT): {symbol} | Price: {curr_price} | TP: {tp:.2f} | SL: {sl:.2f} <<<", flush=True)
                     exchange.create_market_sell_order(symbol, qty)
-                    active_positions[symbol] = {'side': 'SELL', 'entry': curr_price, 'sl': sl, 'tp': tp, 'lowest_price': curr_price}
+                    active_positions[symbol] = {'side': 'SELL', 'entry': curr_price, 'sl': sl, 'tp': tp}
 
                 else:
-                    print(f"[{symbol}] Price: {curr_price} | BUY Signals: {buy_votes} | SELL Signals: {sell_votes}", flush=True)
+                    print(f"[{symbol}] Scanning Market... Price: {curr_price} (No active trade)", flush=True)
 
         except Exception as e:
             print(f"Error on {symbol}: {e}", flush=True)
 
 if __name__ == '__main__':
-    print("Quick-Target 1% Profit Bot Active (5x Target)...", flush=True)
-    set_leverage_safely()
+    print("Scalping Engine Active (Max 1 Trade Per Coin Limit Enabled)...", flush=True)
     while True:
         run_quick_bot()
-        time.sleep(60)
+        time.sleep(30)
