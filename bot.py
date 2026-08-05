@@ -3,25 +3,27 @@ import threading
 import ccxt
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
-# 1. Render Port Requirement Dummy Server
+# 1. Dummy Web Server for Render Keep-Alive
 class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.end_headers()
         self.wfile.write(b"Bot is Running 24/7!")
+    def do_HEAD(self):
+        self.send_response(200)
+        self.end_headers()
 
 def run_dummy_server():
     server = HTTPServer(('0.0.0.0', 10000), SimpleHTTPRequestHandler)
     server.serve_forever()
 
-# Background Thread me Dummy Server start karein
 threading.Thread(target=run_dummy_server, daemon=True).start()
 
 # ==============================================================
 # API CREDENTIALS & CONFIGURATION
 # ==============================================================
 API_KEY = 'b450a76a2cf0724b0e2dddd69cd7675a'
-SECRET_KEY = 'c8e6ef153aefea2dda2b36c0b3fad153'  # <--- Apni real Secret Key yahan paste karein
+SECRET_KEY = 'c8e6ef153aefea2dda2b36c0b3fad153'
 
 exchange = ccxt.delta({
     'apiKey': API_KEY,
@@ -30,9 +32,8 @@ exchange = ccxt.delta({
 })
 
 TIMEFRAME = '5m'
-
 INITIAL_SL_PCT = 0.008     # Initial SL: 0.8%
-TRAILING_STEP_PCT = 0.003  # Har 0.3% movement par SL trail hoga
+TRAILING_STEP_PCT = 0.003  # Trailing Step: 0.3%
 TARGET_TP_PCT = 0.010      # Target: 1.0%
 
 CONFIG = {
@@ -41,6 +42,14 @@ CONFIG = {
 }
 
 active_positions = {}
+
+def get_ticker_price_and_candles(symbol):
+    ticker = exchange.fetch_ticker(symbol)
+    curr_price = ticker['last']
+    ohlcv = exchange.fetch_ohlcv(symbol, TIMEFRAME, limit=50)
+    if not ohlcv or len(ohlcv) < 30:
+        return curr_price, None
+    return curr_price, ohlcv
 
 def check_sma(ohlcv):
     closes = [c[4] for c in ohlcv]
@@ -69,12 +78,10 @@ def run_quick_bot():
     for symbol, settings in CONFIG.items():
         try:
             qty = settings['quantity']
-            ohlcv = exchange.fetch_ohlcv(symbol, TIMEFRAME, limit=50)
-            curr_price = ohlcv[-1][4]
+            curr_price, ohlcv = get_ticker_price_and_candles(symbol)
 
             if symbol in active_positions:
                 pos = active_positions[symbol]
-                
                 if pos['side'] == 'BUY':
                     if curr_price > pos['highest_price'] * (1 + TRAILING_STEP_PCT):
                         pos['highest_price'] = curr_price
@@ -91,6 +98,10 @@ def run_quick_bot():
                         del active_positions[symbol]
 
             else:
+                if ohlcv is None:
+                    print(f"[{symbol}] Price: {curr_price} | Fetching candle data...", flush=True)
+                    continue
+
                 signals = [check_sma(ohlcv), check_rsi(ohlcv), check_breakout(ohlcv), check_momentum(ohlcv)]
                 buy_votes, sell_votes = signals.count('BUY'), signals.count('SELL')
 
@@ -101,7 +112,7 @@ def run_quick_bot():
                     exchange.create_market_buy_order(symbol, qty)
                     active_positions[symbol] = {'side': 'BUY', 'entry': curr_price, 'sl': sl, 'tp': tp, 'highest_price': curr_price}
                 else:
-                    print(f"[{symbol}] Checking Market... Price: {curr_price} | Votes (BUY: {buy_votes})", flush=True)
+                    print(f"[{symbol}] Scanning Market... Price: {curr_price} | BUY Signals: {buy_votes}", flush=True)
 
         except Exception as e:
             print(f"Error on {symbol}: {e}", flush=True)
