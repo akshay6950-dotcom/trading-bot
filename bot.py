@@ -1,9 +1,27 @@
 import time
+import threading
 import ccxt
+from http.server import HTTPServer, BaseHTTPRequestHandler
 
-# API Credentials
+# 1. Render Port Requirement Dummy Server
+class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Bot is Running 24/7!")
+
+def run_dummy_server():
+    server = HTTPServer(('0.0.0.0', 10000), SimpleHTTPRequestHandler)
+    server.serve_forever()
+
+# Background Thread me Dummy Server start karein
+threading.Thread(target=run_dummy_server, daemon=True).start()
+
+# ==============================================================
+# API CREDENTIALS & CONFIGURATION
+# ==============================================================
 API_KEY = '18b4a2eda90d0c3e16e9992db3e538f4'
-SECRET_KEY = '18b4a2eda90d0c3e16e9992db3e538f4'  # <--- Apni real Secret Key yahan paste karein
+SECRET_KEY = 'YOUR_SECRET_KEY_HERE'  # <--- Apni real Secret Key yahan paste karein
 
 exchange = ccxt.delta({
     'apiKey': API_KEY,
@@ -13,19 +31,17 @@ exchange = ccxt.delta({
 
 TIMEFRAME = '5m'
 
-# Quick Profit & Micro Trailing Setup
 INITIAL_SL_PCT = 0.008     # Initial SL: 0.8%
 TRAILING_STEP_PCT = 0.003  # Har 0.3% movement par SL trail hoga
-TARGET_TP_PCT = 0.010      # Reduced Target: 1.0%
+TARGET_TP_PCT = 0.010      # Target: 1.0%
 
 CONFIG = {
-    'BTC/USDT': {'quantity': 0.045},  # 0.045 Bitcoin
-    'SOL/USDT': {'quantity': 10.0}    # 10 Solana
+    'BTC/USDT': {'quantity': 0.045},
+    'SOL/USDT': {'quantity': 10.0}
 }
 
 active_positions = {}
 
-# Strategies
 def check_sma(ohlcv):
     closes = [c[4] for c in ohlcv]
     sma_fast, sma_slow = sum(closes[-10:]) / 10, sum(closes[-30:]) / 30
@@ -49,7 +65,6 @@ def check_momentum(ohlcv):
     change = ((ohlcv[-1][4] - ohlcv[-6][4]) / ohlcv[-6][4]) * 100
     return 'BUY' if change > 0.3 else ('SELL' if change < -0.3 else None)
 
-# Execution Engine
 def run_quick_bot():
     for symbol, settings in CONFIG.items():
         try:
@@ -64,14 +79,14 @@ def run_quick_bot():
                     if curr_price > pos['highest_price'] * (1 + TRAILING_STEP_PCT):
                         pos['highest_price'] = curr_price
                         pos['sl'] = curr_price * (1 - INITIAL_SL_PCT)
-                        print(f"[{symbol}] Trailing SL Updated -> {pos['sl']:.2f}")
+                        print(f"[{symbol}] Trailing SL Updated -> {pos['sl']:.2f}", flush=True)
 
                     if curr_price <= pos['sl']:
-                        print(f"[{symbol}] SL Hit! Exit Position.")
+                        print(f"[{symbol}] SL Hit! Exit Position.", flush=True)
                         exchange.create_market_sell_order(symbol, qty)
                         del active_positions[symbol]
                     elif curr_price >= pos['tp']:
-                        print(f"[{symbol}] Quick 1% Target Hit! Profit Booked.")
+                        print(f"[{symbol}] Quick 1% Target Hit! Profit Booked.", flush=True)
                         exchange.create_market_sell_order(symbol, qty)
                         del active_positions[symbol]
 
@@ -82,15 +97,17 @@ def run_quick_bot():
                 if buy_votes >= 1 and sell_votes == 0:
                     sl = curr_price * (1 - INITIAL_SL_PCT)
                     tp = curr_price * (1 + TARGET_TP_PCT)
-                    print(f">>> BUY ENTRY: {symbol} | Price: {curr_price} | TP (1%): {tp:.2f} | SL: {sl:.2f} <<<")
+                    print(f">>> BUY ENTRY: {symbol} | Price: {curr_price} | TP (1%): {tp:.2f} | SL: {sl:.2f} <<<", flush=True)
                     exchange.create_market_buy_order(symbol, qty)
                     active_positions[symbol] = {'side': 'BUY', 'entry': curr_price, 'sl': sl, 'tp': tp, 'highest_price': curr_price}
+                else:
+                    print(f"[{symbol}] Checking Market... Price: {curr_price} | Votes (BUY: {buy_votes})", flush=True)
 
         except Exception as e:
-            print(f"Error on {symbol}: {e}")
+            print(f"Error on {symbol}: {e}", flush=True)
 
 if __name__ == '__main__':
-    print("Quick-Target 1% Profit Bot Active...")
+    print("Quick-Target 1% Profit Bot Active...", flush=True)
     while True:
         run_quick_bot()
         time.sleep(60)
