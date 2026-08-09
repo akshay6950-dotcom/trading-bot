@@ -1,5 +1,6 @@
 import time
 import urllib.request
+import urllib.parse
 import json
 import math
 import threading
@@ -106,24 +107,36 @@ def execute_trade(symbol, side, price, reason):
     print(f"[{datetime.now().strftime('%H:%M:%S')}] 🔄 Placing REAL {side} Order for {symbol} on Shark Exchange...")
     
     try:
-        # 1. SHARK EXCHANGE API ENDPOINT
         order_url = "https://api.sharkexchange.in/v1/order/place-order"
         
-        # 2. CREATE PAYLOAD (Order Details)
-        payload = f"symbol={symbol}&side={side}&orderType=MARKET&quantity={qty}&leverage={LEVERAGE}&timestamp={int(time.time() * 1000)}"
+        # Fix format for Shark Exchange (Remove Hyphens)
+        clean_symbol = 'PAXGUSDT' if 'XAU' in symbol else symbol.replace('-', '')
         
-        # 3. CREATE SIGNATURE (Security)
-        signature = hmac.new(API_SECRET.encode('utf-8'), payload.encode('utf-8'), hashlib.sha256).hexdigest()
+        # Official parameters from Shark Exchange Docs
+        params = {
+            'timestamp': str(int(time.time() * 1000)),
+            'placeType': 'ORDER_FORM',
+            'quantity': qty,
+            'side': side,
+            'symbol': clean_symbol,
+            'type': 'MARKET'
+        }
         
-        # 4. SET HEADERS
+        # Create Data to Sign
+        query_string = urllib.parse.urlencode(params)
+        
+        # HMAC SHA256 Encryption signature
+        signature = hmac.new(API_SECRET.encode('utf-8'), query_string.encode('utf-8'), hashlib.sha256).hexdigest()
+        
+        # Final payload for request
+        payload = query_string + f"&signature={signature}"
+        
         headers = {
             "Content-Type": "application/x-www-form-urlencoded",
             "X-API-KEY": API_KEY,
-            "Signature": signature,
             "User-Agent": "Mozilla/5.0"
         }
         
-        # 5. SEND REQUEST
         req = urllib.request.Request(order_url, data=payload.encode('utf-8'), headers=headers, method='POST')
         with urllib.request.urlopen(req, timeout=10) as response:
             res_data = response.read().decode()
@@ -134,7 +147,12 @@ def execute_trade(symbol, side, price, reason):
         entry_prices[symbol] = price
         
     except Exception as e:
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] ❌ FAILED to place order on Exchange: {e}")
+        # If exchange blocks it, read the exact error message
+        if hasattr(e, 'read'):
+            error_msg = e.read().decode()
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] ❌ FAILED on Exchange. Error Code: {e} | Detail: {error_msg}")
+        else:
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] ❌ FAILED to connect: {e}")
 
 # ==========================================
 # BOT LOGIC LOOP
