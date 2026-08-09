@@ -62,37 +62,30 @@ def calculate_bollinger_bands(prices, period=20):
     return sma + (2 * std), sma - (2 * std)
 
 # ==========================================
-# FETCH PRICE (BULLETPROOF VERSION)
+# ANTI-BLOCK API FETCHER (KuCoin + Binance Alt)
 # ==========================================
 def fetch_ticker_price(symbol):
-    # 1. Binance API (Primary)
+    # 1. KuCoin API (Primary - Super friendly with Cloud servers)
     try:
-        clean_symbol = symbol.replace('-', '')
-        if clean_symbol == 'XAUUSDT': clean_symbol = 'PAXGUSDT'
-        url = f"https://api.binance.com/api/v3/ticker/price?symbol={clean_symbol}"
+        kucoin_sym = 'PAXG-USDT' if 'XAU' in symbol else symbol
+        url = f"https://api.kucoin.com/api/v1/market/orderbook/level1?symbol={kucoin_sym}"
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=5) as response:
+            data = json.loads(response.read().decode())
+            if data['code'] == '200000':
+                return float(data['data']['price'])
+    except Exception:
+        pass
+
+    # 2. Binance Alternative API (Secondary Fallback)
+    try:
+        clean_symbol = 'PAXGUSDT' if 'XAU' in symbol else symbol.replace('-', '')
+        url = f"https://api1.binance.com/api/v3/ticker/price?symbol={clean_symbol}"
         req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
         with urllib.request.urlopen(req, timeout=5) as response:
             return float(json.loads(response.read().decode())['price'])
     except Exception:
-        pass # Fallback to CoinGecko
-        
-    # 2. CoinGecko API (Fallback for Render US IPs)
-    try:
-        cg_id = ''
-        if 'BTC' in symbol: cg_id = 'bitcoin'
-        elif 'ETH' in symbol: cg_id = 'ethereum'
-        elif 'SOL' in symbol: cg_id = 'solana'
-        elif 'XAU' in symbol or 'PAXG' in symbol: cg_id = 'pax-gold'
-        
-        if cg_id:
-            url = f"https://api.coingecko.com/api/v3/simple/price?ids={cg_id}&vs_currencies=usd"
-            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-            with urllib.request.urlopen(req, timeout=5) as response:
-                data = json.loads(response.read().decode())
-                return float(data[cg_id]['usd'])
-    except Exception:
         return None
-    return None
 
 def execute_trade(symbol, side, price, reason):
     qty = POSITION_SIZES.get(symbol, 0.01)
@@ -103,7 +96,7 @@ def execute_trade(symbol, side, price, reason):
 # BOT LOGIC LOOP
 # ==========================================
 def bot_loop():
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] High-Frequency Bot Engine Started (ETH, GOLD, SOL, BTC)...")
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] Bot Engine Started (ETH, GOLD, SOL, BTC) with Anti-Block APIs...")
     while True:
         for symbol in SYMBOLS:
             current_price = fetch_ticker_price(symbol)
@@ -128,7 +121,7 @@ def bot_loop():
                     if ema_fast > ema_slow and history[-2] <= ema_slow: execute_trade(symbol, 'BUY', current_price, 'EMA Golden Cross')
                     elif ema_fast < ema_slow and history[-2] >= ema_slow: execute_trade(symbol, 'SELL', current_price, 'EMA Death Cross')
             else:
-                print(f"[{datetime.now().strftime('%H:%M:%S')}] [{symbol}] API Error / Fetching Price...")
+                print(f"[{datetime.now().strftime('%H:%M:%S')}] [{symbol}] API Blocked / Retrying in next cycle...")
         time.sleep(CHECK_INTERVAL)
 
 # ==========================================
@@ -139,7 +132,7 @@ class SimpleHandler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header('Content-type', 'text/plain')
         self.end_headers()
-        self.wfile.write(b"Bot is alive!")
+        self.wfile.write(b"Bot is active and bypassing blocks!")
     def log_message(self, format, *args): pass
 
 def main():
@@ -149,7 +142,7 @@ def main():
 
     port = int(os.environ.get('PORT', 10000))
     server_address = ('0.0.0.0', port)
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] Web Server binding to port {port} for Render...")
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] Web Server binding to port {port}...")
     httpd = HTTPServer(server_address, SimpleHandler)
     httpd.serve_forever()
 
