@@ -1,7 +1,30 @@
 import time
 import requests
 import math
+import threading
+import os
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from datetime import datetime
+
+# ==========================================
+# BACKGROUND WEB SERVER (TO KEEP RENDER ALIVE)
+# ==========================================
+class SimpleHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header('Content-type', 'text/plain')
+        self.end_headers()
+        self.wfile.write(b"Bot is alive!")
+    
+    # Hide web server logs from console to keep it clean
+    def log_message(self, format, *args):
+        pass
+
+def run_server():
+    port = int(os.environ.get('PORT', 10000))
+    server_address = ('', port)
+    httpd = HTTPServer(server_address, SimpleHandler)
+    httpd.serve_forever()
 
 # ==========================================
 # CONFIGURATION & PARAMETERS
@@ -14,7 +37,6 @@ SYMBOLS = [
     'PAXG-USDT'  # Gold Alternative
 ]
 
-# Quantities as per requested ratio
 POSITION_SIZES = {
     'BTC-USDT': 0.035,
     'ETH-USDT': 50.0,
@@ -144,7 +166,12 @@ def analyze_market_and_trade(symbol, current_price):
 # MAIN LOOP
 # ==========================================
 def main():
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] High-Frequency Engine Active (5x Leverage & Standard Libs)...")
+    # 1. Start the web server in the background so Render approves the deploy
+    threading.Thread(target=run_server, daemon=True).start()
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] Web server started. Render will now accept the deployment.")
+    
+    # 2. Start the actual bot logic
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] High-Frequency Engine Active (5x Leverage)...")
     
     while True:
         for symbol in SYMBOLS:
