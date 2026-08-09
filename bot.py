@@ -23,12 +23,7 @@ LEVERAGE = 5
 CHECK_INTERVAL = 15
 
 price_history = {symbol: [] for symbol in SYMBOLS}
-
-# TRACKS ACTIVE TRADES PER CURRENCY
-# True means a trade is currently open for that coin, False means free to trade
 active_trades = {symbol: False for symbol in SYMBOLS}
-
-# Track entry prices to simulate profit/loss closing condition
 entry_prices = {symbol: 0.0 for symbol in SYMBOLS}
 
 # ==========================================
@@ -84,23 +79,20 @@ def fetch_ticker_price(symbol):
 # REAL TRADE EXECUTION & MANAGEMENT ENGINE
 # ==========================================
 def check_and_manage_trade(symbol, current_price):
-    # If trade is already active for this specific currency, check for profit/loss book condition
     if active_trades[symbol]:
         entry_p = entry_prices[symbol]
-        # Example Target: Close trade if profit >= 1.5% or loss >= 1.0% (Simulated Book Condition)
         pnl_pct = ((current_price - entry_p) / entry_p) * 100
         
-        # If price moves by target, simulate booking profit/loss and free up the coin
+        # TARGET: Close if profit >= 1.2% or loss >= 1.0% (Modify as needed)
         if abs(pnl_pct) >= 1.2: 
             print(f"[{datetime.now().strftime('%H:%M:%S')}] 💰 TRADE CLOSED / BOOKED for {symbol} at Price: {current_price} | PnL: {round(pnl_pct, 2)}%")
-            active_trades[symbol] = False # Unlocks coin for next trade
+            active_trades[symbol] = False 
         else:
             print(f"[{datetime.now().strftime('%H:%M:%S')}] ⏳ Trade Active for {symbol} | Entry: {entry_p} | Current: {current_price} | PnL: {round(pnl_pct, 2)}% (Waiting to Book)")
         return True
     return False
 
 def execute_trade(symbol, side, price, reason):
-    # BLOCK NEW TRADE IF ALREADY ACTIVE FOR THIS SYMBOL
     if active_trades[symbol]:
         return
 
@@ -111,34 +103,52 @@ def execute_trade(symbol, side, price, reason):
         print(f"[{datetime.now().strftime('%H:%M:%S')}] ⚠️ API Keys missing! Trade skipped.")
         return
 
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] 🔄 Placing REAL {side} Order for {symbol}...")
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] 🔄 Placing REAL {side} Order for {symbol} on Shark Exchange...")
     
     try:
-        payload = f"symbol={symbol}&side={side}&quantity={qty}&leverage={LEVERAGE}&timestamp={int(time.time() * 1000)}"
+        # 1. SHARK EXCHANGE API ENDPOINT
+        order_url = "https://api.sharkexchange.in/v1/order/place-order"
+        
+        # 2. CREATE PAYLOAD (Order Details)
+        payload = f"symbol={symbol}&side={side}&orderType=MARKET&quantity={qty}&leverage={LEVERAGE}&timestamp={int(time.time() * 1000)}"
+        
+        # 3. CREATE SIGNATURE (Security)
         signature = hmac.new(API_SECRET.encode('utf-8'), payload.encode('utf-8'), hashlib.sha256).hexdigest()
         
-        # LOCK THIS COIN SO NO NEW TRADE OPENS UNTIL THIS IS BOOKED
+        # 4. SET HEADERS
+        headers = {
+            "Content-Type": "application/x-www-form-urlencoded",
+            "X-API-KEY": API_KEY,
+            "Signature": signature,
+            "User-Agent": "Mozilla/5.0"
+        }
+        
+        # 5. SEND REQUEST
+        req = urllib.request.Request(order_url, data=payload.encode('utf-8'), headers=headers, method='POST')
+        with urllib.request.urlopen(req, timeout=10) as response:
+            res_data = response.read().decode()
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] ✅ SUCCESS: Order opened on Shark Exchange! Reply: {res_data}")
+        
+        # LOCK THIS COIN
         active_trades[symbol] = True
         entry_prices[symbol] = price
         
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] ✅ SUCCESS: Order opened for {symbol}. Locked until profit/loss is booked.")
     except Exception as e:
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] ❌ FAILED to place order: {e}")
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] ❌ FAILED to place order on Exchange: {e}")
 
 # ==========================================
 # BOT LOGIC LOOP
 # ==========================================
 def bot_loop():
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] SMART PER-CURRENCY LOCK ENGINE STARTED...")
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] SHARK EXCHANGE LIVE ENGINE STARTED...")
     if API_KEY: print(f"[{datetime.now().strftime('%H:%M:%S')}] ✅ API Key Detected. Live Trading is ON.")
 
     while True:
         for symbol in SYMBOLS:
             current_price = fetch_ticker_price(symbol)
             if current_price is not None:
-                # FIRST: Check if an active trade exists for this coin and manage it
                 if check_and_manage_trade(symbol, current_price):
-                    continue # Skip new signals for this coin while trade is open
+                    continue
 
                 history = price_history[symbol]
                 history.append(current_price)
@@ -165,7 +175,7 @@ class SimpleHandler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header('Content-type', 'text/plain')
         self.end_headers()
-        self.wfile.write(b"Bot is active!")
+        self.wfile.write(b"Bot is active and trading on Shark Exchange!")
     def log_message(self, format, *args): pass
 
 def main():
