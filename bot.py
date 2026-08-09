@@ -17,14 +17,17 @@ def print(*args, **kwargs):
     kwargs['flush'] = True
     builtins.print(*args, **kwargs)
 
-SYMBOLS = ['BTC-USDT', 'ETH-USDT', 'SOL-USDT', 'XAU-USDT', 'PAXG-USDT']
-POSITION_SIZES = {'BTC-USDT': 0.035, 'ETH-USDT': 50.0, 'SOL-USDT': 10.0, 'XAU-USDT': 0.5, 'PAXG-USDT': 0.5}
-LEVERAGE = 5
+# PAXG Hata diya gaya hai
+SYMBOLS = ['BTC-USDT', 'ETH-USDT', 'SOL-USDT', 'XAU-USDT']
+POSITION_SIZES = {'BTC-USDT': 0.035, 'ETH-USDT': 50.0, 'SOL-USDT': 10.0, 'XAU-USDT': 0.5}
 CHECK_INTERVAL = 15
 
+# Tracking Dictionaries
 price_history = {symbol: [] for symbol in SYMBOLS}
 active_trades = {symbol: False for symbol in SYMBOLS}
 entry_prices = {symbol: 0.0 for symbol in SYMBOLS}
+trade_sides = {symbol: None for symbol in SYMBOLS}
+max_pnl = {symbol: 0.0 for symbol in SYMBOLS}
 
 # ==========================================
 # FETCH SECURE API KEYS FROM RENDER
@@ -56,7 +59,7 @@ def calculate_rsi(prices, period=14):
     return 100 - (100 / (1 + rs))
 
 # ==========================================
-# API PRICE FETCHER (Anti-Block)
+# API PRICE FETCHER
 # ==========================================
 def fetch_ticker_price(symbol):
     try:
@@ -78,17 +81,78 @@ def fetch_ticker_price(symbol):
 # ==========================================
 # REAL TRADE EXECUTION & MANAGEMENT ENGINE
 # ==========================================
+def close_position_on_exchange(symbol, original_side):
+    close_side = 'SELL' if original_side == 'BUY' else 'BUY'
+    raw_qty = POSITION_SIZES.get(symbol, 0.01)
+    qty = int(raw_qty) if isinstance(raw_qty, float) and raw_qty.is_integer() else raw_qty
+    
+    try:
+        order_url = "https://api.sharkexchange.in/v1/order/place-order"
+        clean_symbol = symbol.replace('-', '')
+        
+        # reduceOnly=True ensures it only closes the existing trade
+        params = {
+            'timestamp': str(int(time.time() * 1000)),
+            'placeType': 'ORDER_FORM',
+            'quantity': qty,
+            'reduceOnly': True, 
+            'side': close_side,
+            'symbol': clean_symbol,
+            'type': 'MARKET'
+        }
+        
+        json_payload = json.dumps(params, separators=(',', ':'))
+        signature = hmac.new(API_SECRET.encode('utf-8'), json_payload.encode('utf-8'), hashlib.sha256).hexdigest()
+        
+        headers = {
+            "Content-Type": "application/json",
+            "api-key": API_KEY,
+            "signature": signature,
+            "User-Agent": "Mozilla/5.0"
+        }
+        
+        req = urllib.request.Request(order_url, data=json_payload.encode('utf-8'), headers=headers, method='POST')
+        with urllib.request.urlopen(req, timeout=10) as response:
+            res_data = response.read().decode()
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] 🏦 EXCHANGE CONFIRMATION: Position Closed for {symbol}!")
+            
+    except Exception as e:
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] ❌ FAILED to close {symbol} on Exchange: {e}")
+
 def check_and_manage_trade(symbol, current_price):
     if active_trades[symbol]:
         entry_p = entry_prices[symbol]
-        pnl_pct = ((current_price - entry_p) / entry_p) * 100
+        side = trade_sides[symbol]
         
-        # TARGET: Close if profit >= 1.2% or loss >= 1.0%
-        if abs(pnl_pct) >= 1.2: 
-            print(f"[{datetime.now().strftime('%H:%M:%S')}] 💰 TRADE CLOSED / BOOKED for {symbol} at Price: {current_price} | PnL: {round(pnl_pct, 2)}%")
-            active_trades[symbol] = False 
+        # Calculate Real PnL based on LONG or SHORT
+        if side == 'BUY':
+            pnl_pct = ((current_price - entry_p) / entry_p) * 100
         else:
-            print(f"[{datetime.now().strftime('%H:%M:%S')}] ⏳ Trade Active for {symbol} | Entry: {entry_p} | Current: {current_price} | PnL: {round(pnl_pct, 2)}% (Waiting to Book)")
+            pnl_pct = ((entry_p - current_price) / entry_p) * 100
+            
+        # Update Highest PnL for Trailing Stop Loss
+        if pnl_pct > max_pnl[symbol]:
+            max_pnl[symbol] = pnl_pct
+            
+        target_hit = pnl_pct >= 2.5
+        sl_hit = pnl_pct <= -1.0
+        tsl_hit = False
+        
+        # Trailing SL Logic: Activate at 1.0% Profit, Trail behind by 0.5%
+        if max_pnl[symbol] >= 1.0:
+            if pnl_pct <= (max_pnl[symbol] - 0.5):
+                tsl_hit = True
+                
+        if target_hit or sl_hit or tsl_hit:
+            if target_hit: reason = "Target Hit 🎯"
+            elif tsl_hit: reason = "Trailing SL Hit 🛡️"
+            else: reason = "Stop Loss Hit 🛑"
+            
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] 💰 CLOSING TRADE ({reason}) for {symbol} | PnL: {round(pnl_pct, 2)}%")
+            close_position_on_exchange(symbol, side)
+            active_trades[symbol] = False
+        else:
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] ⏳ Active: {symbol} | Cur: {current_price} | PnL: {round(pnl_pct, 2)}% | Max PnL: {round(max_pnl[symbol], 2)}%")
         return True
     return False
 
@@ -97,8 +161,6 @@ def execute_trade(symbol, side, price, reason):
         return
 
     raw_qty = POSITION_SIZES.get(symbol, 0.01)
-    
-    # 💥 JAVASCRIPT HASH FIX: Convert 50.0 to 50 so signatures match perfectly
     qty = int(raw_qty) if isinstance(raw_qty, float) and raw_qty.is_integer() else raw_qty
     
     print(f"[{datetime.now().strftime('%H:%M:%S')}] 🚀 NEW SIGNAL ({reason}) | {symbol} | Side: {side} | Qty: {qty} | Price: {price}")
@@ -107,13 +169,10 @@ def execute_trade(symbol, side, price, reason):
         print(f"[{datetime.now().strftime('%H:%M:%S')}] ⚠️ API Keys missing! Trade skipped.")
         return
 
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] 🔄 Placing REAL {side} Order for {symbol} on Shark Exchange...")
-    
     try:
         order_url = "https://api.sharkexchange.in/v1/order/place-order"
-        clean_symbol = 'PAXGUSDT' if 'XAU' in symbol else symbol.replace('-', '')
+        clean_symbol = symbol.replace('-', '')
         
-        # Added 'reduceOnly': False as required by the exchange
         params = {
             'timestamp': str(int(time.time() * 1000)),
             'placeType': 'ORDER_FORM',
@@ -141,11 +200,13 @@ def execute_trade(symbol, side, price, reason):
         
         active_trades[symbol] = True
         entry_prices[symbol] = price
+        trade_sides[symbol] = side
+        max_pnl[symbol] = 0.0
         
     except Exception as e:
         if hasattr(e, 'read'):
             error_msg = e.read().decode()
-            print(f"[{datetime.now().strftime('%H:%M:%S')}] ❌ FAILED on Exchange. Error Code: {e} | Detail: {error_msg}")
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] ❌ FAILED on Exchange. Detail: {error_msg}")
         else:
             print(f"[{datetime.now().strftime('%H:%M:%S')}] ❌ FAILED to connect: {e}")
 
@@ -153,9 +214,8 @@ def execute_trade(symbol, side, price, reason):
 # BOT LOGIC LOOP
 # ==========================================
 def bot_loop():
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] SHARK EXCHANGE LIVE ENGINE STARTED...")
-    if API_KEY: print(f"[{datetime.now().strftime('%H:%M:%S')}] ✅ API Key Detected. Live Trading is ON.")
-
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] SHARK EXCHANGE LIVE ENGINE (V2.0) STARTED...")
+    
     while True:
         for symbol in SYMBOLS:
             current_price = fetch_ticker_price(symbol)
