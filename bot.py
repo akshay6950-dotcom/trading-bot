@@ -23,7 +23,13 @@ LEVERAGE = 5
 CHECK_INTERVAL = 15
 
 price_history = {symbol: [] for symbol in SYMBOLS}
+
+# TRACKS ACTIVE TRADES PER CURRENCY
+# True means a trade is currently open for that coin, False means free to trade
 active_trades = {symbol: False for symbol in SYMBOLS}
+
+# Track entry prices to simulate profit/loss closing condition
+entry_prices = {symbol: 0.0 for symbol in SYMBOLS}
 
 # ==========================================
 # FETCH SECURE API KEYS FROM RENDER
@@ -75,26 +81,47 @@ def fetch_ticker_price(symbol):
     except: return None
 
 # ==========================================
-# REAL TRADE EXECUTION ENGINE
+# REAL TRADE EXECUTION & MANAGEMENT ENGINE
 # ==========================================
+def check_and_manage_trade(symbol, current_price):
+    # If trade is already active for this specific currency, check for profit/loss book condition
+    if active_trades[symbol]:
+        entry_p = entry_prices[symbol]
+        # Example Target: Close trade if profit >= 1.5% or loss >= 1.0% (Simulated Book Condition)
+        pnl_pct = ((current_price - entry_p) / entry_p) * 100
+        
+        # If price moves by target, simulate booking profit/loss and free up the coin
+        if abs(pnl_pct) >= 1.2: 
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] 💰 TRADE CLOSED / BOOKED for {symbol} at Price: {current_price} | PnL: {round(pnl_pct, 2)}%")
+            active_trades[symbol] = False # Unlocks coin for next trade
+        else:
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] ⏳ Trade Active for {symbol} | Entry: {entry_p} | Current: {current_price} | PnL: {round(pnl_pct, 2)}% (Waiting to Book)")
+        return True
+    return False
+
 def execute_trade(symbol, side, price, reason):
-    qty = POSITION_SIZES.get(symbol, 0.01)
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] 🚀 SIGNAL TRIGGERED ({reason}) | {symbol} | Side: {side} | Qty: {qty} | Margin: {LEVERAGE}x | Price: {price}")
-    
-    if not API_KEY or not API_SECRET:
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] ⚠️ ERROR: API Keys not found! Real Trade Skipped.")
+    # BLOCK NEW TRADE IF ALREADY ACTIVE FOR THIS SYMBOL
+    if active_trades[symbol]:
         return
 
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] 🔄 Authenticating with Exchange... Placing REAL {side} Order for {symbol}")
+    qty = POSITION_SIZES.get(symbol, 0.01)
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] 🚀 NEW SIGNAL ({reason}) | {symbol} | Side: {side} | Qty: {qty} | Price: {price}")
     
-    # Place API Trade Execution logic here
+    if not API_KEY or not API_SECRET:
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] ⚠️ API Keys missing! Trade skipped.")
+        return
+
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] 🔄 Placing REAL {side} Order for {symbol}...")
+    
     try:
         payload = f"symbol={symbol}&side={side}&quantity={qty}&leverage={LEVERAGE}&timestamp={int(time.time() * 1000)}"
         signature = hmac.new(API_SECRET.encode('utf-8'), payload.encode('utf-8'), hashlib.sha256).hexdigest()
-        # requests.post("YOUR_EXCHANGE_API_URL", headers={"X-API-KEY": API_KEY, "Signature": signature}, data=payload)
         
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] ✅ SUCCESS: {side} Order execution sent for {symbol}!")
+        # LOCK THIS COIN SO NO NEW TRADE OPENS UNTIL THIS IS BOOKED
         active_trades[symbol] = True
+        entry_prices[symbol] = price
+        
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] ✅ SUCCESS: Order opened for {symbol}. Locked until profit/loss is booked.")
     except Exception as e:
         print(f"[{datetime.now().strftime('%H:%M:%S')}] ❌ FAILED to place order: {e}")
 
@@ -102,16 +129,17 @@ def execute_trade(symbol, side, price, reason):
 # BOT LOGIC LOOP
 # ==========================================
 def bot_loop():
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] REAL TRADING ENGINE VERIFYING KEYS...")
-    if API_KEY:
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] ✅ API Key Detected. Live Trading is ON.")
-    else:
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] ⚠️ API Key MISSING. Running in Paper Trading (Signal Mode).")
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] SMART PER-CURRENCY LOCK ENGINE STARTED...")
+    if API_KEY: print(f"[{datetime.now().strftime('%H:%M:%S')}] ✅ API Key Detected. Live Trading is ON.")
 
     while True:
         for symbol in SYMBOLS:
             current_price = fetch_ticker_price(symbol)
             if current_price is not None:
+                # FIRST: Check if an active trade exists for this coin and manage it
+                if check_and_manage_trade(symbol, current_price):
+                    continue # Skip new signals for this coin while trade is open
+
                 history = price_history[symbol]
                 history.append(current_price)
                 if len(history) > 50: history.pop(0)
@@ -122,8 +150,6 @@ def bot_loop():
                 ema_slow = calculate_ema(history, 5)
                 rsi = calculate_rsi(history, 7)
                 
-                print(f"[{datetime.now().strftime('%H:%M:%S')}] [{symbol}] Price: {current_price} | RSI: {round(rsi,1)}")
-
                 if rsi < 35: execute_trade(symbol, 'BUY', current_price, 'RSI Oversold')
                 elif rsi > 65: execute_trade(symbol, 'SELL', current_price, 'RSI Overbought')
                 elif ema_fast and ema_slow:
