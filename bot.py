@@ -96,7 +96,11 @@ def execute_trade(symbol, side, price, reason):
     if active_trades[symbol]:
         return
 
-    qty = POSITION_SIZES.get(symbol, 0.01)
+    raw_qty = POSITION_SIZES.get(symbol, 0.01)
+    
+    # 💥 JAVASCRIPT HASH FIX: Convert 50.0 to 50 so signatures match perfectly
+    qty = int(raw_qty) if isinstance(raw_qty, float) and raw_qty.is_integer() else raw_qty
+    
     print(f"[{datetime.now().strftime('%H:%M:%S')}] 🚀 NEW SIGNAL ({reason}) | {symbol} | Side: {side} | Qty: {qty} | Price: {price}")
     
     if not API_KEY or not API_SECRET:
@@ -109,23 +113,20 @@ def execute_trade(symbol, side, price, reason):
         order_url = "https://api.sharkexchange.in/v1/order/place-order"
         clean_symbol = 'PAXGUSDT' if 'XAU' in symbol else symbol.replace('-', '')
         
-        # Official parameters from Shark Exchange Docs
+        # Added 'reduceOnly': False as required by the exchange
         params = {
             'timestamp': str(int(time.time() * 1000)),
             'placeType': 'ORDER_FORM',
             'quantity': qty,
+            'reduceOnly': False,
             'side': side,
             'symbol': clean_symbol,
             'type': 'MARKET'
         }
         
-        # Exact JS replication: JSON stringify with no spaces
         json_payload = json.dumps(params, separators=(',', ':'))
-        
-        # HMAC SHA256 Encryption signature based on JSON string
         signature = hmac.new(API_SECRET.encode('utf-8'), json_payload.encode('utf-8'), hashlib.sha256).hexdigest()
         
-        # EXACT Headers from JS Docs
         headers = {
             "Content-Type": "application/json",
             "api-key": API_KEY,
