@@ -3,8 +3,16 @@ import requests
 import math
 import threading
 import os
+import builtins
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from datetime import datetime
+
+# ==========================================
+# RENDER LOGS FIX (Force print to screen instantly)
+# ==========================================
+def print(*args, **kwargs):
+    kwargs['flush'] = True
+    builtins.print(*args, **kwargs)
 
 # ==========================================
 # CONFIGURATION & PARAMETERS
@@ -102,7 +110,7 @@ def bot_loop():
                     if ema_fast > ema_slow and history[-2] <= ema_slow: execute_trade(symbol, 'BUY', current_price, 'EMA Golden Cross')
                     elif ema_fast < ema_slow and history[-2] >= ema_slow: execute_trade(symbol, 'SELL', current_price, 'EMA Death Cross')
             else:
-                print(f"[{datetime.now().strftime('%H:%M:%S')}] [{symbol}] API Error, Retrying...")
+                print(f"[{datetime.now().strftime('%H:%M:%S')}] [{symbol}] API Error / Fetching Price...")
         time.sleep(CHECK_INTERVAL)
 
 # ==========================================
