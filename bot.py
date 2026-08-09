@@ -1,6 +1,5 @@
 import time
 import urllib.request
-import urllib.parse
 import json
 import math
 import threading
@@ -84,7 +83,7 @@ def check_and_manage_trade(symbol, current_price):
         entry_p = entry_prices[symbol]
         pnl_pct = ((current_price - entry_p) / entry_p) * 100
         
-        # TARGET: Close if profit >= 1.2% or loss >= 1.0% (Modify as needed)
+        # TARGET: Close if profit >= 1.2% or loss >= 1.0%
         if abs(pnl_pct) >= 1.2: 
             print(f"[{datetime.now().strftime('%H:%M:%S')}] 💰 TRADE CLOSED / BOOKED for {symbol} at Price: {current_price} | PnL: {round(pnl_pct, 2)}%")
             active_trades[symbol] = False 
@@ -108,8 +107,6 @@ def execute_trade(symbol, side, price, reason):
     
     try:
         order_url = "https://api.sharkexchange.in/v1/order/place-order"
-        
-        # Fix format for Shark Exchange (Remove Hyphens)
         clean_symbol = 'PAXGUSDT' if 'XAU' in symbol else symbol.replace('-', '')
         
         # Official parameters from Shark Exchange Docs
@@ -122,32 +119,29 @@ def execute_trade(symbol, side, price, reason):
             'type': 'MARKET'
         }
         
-        # Create Data to Sign
-        query_string = urllib.parse.urlencode(params)
+        # Exact JS replication: JSON stringify with no spaces
+        json_payload = json.dumps(params, separators=(',', ':'))
         
-        # HMAC SHA256 Encryption signature
-        signature = hmac.new(API_SECRET.encode('utf-8'), query_string.encode('utf-8'), hashlib.sha256).hexdigest()
+        # HMAC SHA256 Encryption signature based on JSON string
+        signature = hmac.new(API_SECRET.encode('utf-8'), json_payload.encode('utf-8'), hashlib.sha256).hexdigest()
         
-        # Final payload for request
-        payload = query_string + f"&signature={signature}"
-        
+        # EXACT Headers from JS Docs
         headers = {
-            "Content-Type": "application/x-www-form-urlencoded",
-            "X-API-KEY": API_KEY,
+            "Content-Type": "application/json",
+            "api-key": API_KEY,
+            "signature": signature,
             "User-Agent": "Mozilla/5.0"
         }
         
-        req = urllib.request.Request(order_url, data=payload.encode('utf-8'), headers=headers, method='POST')
+        req = urllib.request.Request(order_url, data=json_payload.encode('utf-8'), headers=headers, method='POST')
         with urllib.request.urlopen(req, timeout=10) as response:
             res_data = response.read().decode()
             print(f"[{datetime.now().strftime('%H:%M:%S')}] ✅ SUCCESS: Order opened on Shark Exchange! Reply: {res_data}")
         
-        # LOCK THIS COIN
         active_trades[symbol] = True
         entry_prices[symbol] = price
         
     except Exception as e:
-        # If exchange blocks it, read the exact error message
         if hasattr(e, 'read'):
             error_msg = e.read().decode()
             print(f"[{datetime.now().strftime('%H:%M:%S')}] ❌ FAILED on Exchange. Error Code: {e} | Detail: {error_msg}")
