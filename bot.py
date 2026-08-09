@@ -1,5 +1,6 @@
 import time
-import requests
+import urllib.request
+import json
 import math
 import threading
 import os
@@ -8,7 +9,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from datetime import datetime
 
 # ==========================================
-# RENDER LOGS FIX (Force print to screen instantly)
+# RENDER LOGS FIX
 # ==========================================
 def print(*args, **kwargs):
     kwargs['flush'] = True
@@ -61,20 +62,37 @@ def calculate_bollinger_bands(prices, period=20):
     return sma + (2 * std), sma - (2 * std)
 
 # ==========================================
-# FETCH PRICE & EXECUTE
+# FETCH PRICE (BULLETPROOF VERSION)
 # ==========================================
 def fetch_ticker_price(symbol):
+    # 1. Binance API (Primary)
     try:
         clean_symbol = symbol.replace('-', '')
+        if clean_symbol == 'XAUUSDT': clean_symbol = 'PAXGUSDT'
         url = f"https://api.binance.com/api/v3/ticker/price?symbol={clean_symbol}"
-        response = requests.get(url, timeout=5)
-        if response.status_code == 200: return float(response.json()['price'])
-        if 'SOL' in symbol:
-            res = requests.get("https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd", timeout=5).json()
-            return float(res['solana']['usd'])
-        return None
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=5) as response:
+            return float(json.loads(response.read().decode())['price'])
+    except Exception:
+        pass # Fallback to CoinGecko
+        
+    # 2. CoinGecko API (Fallback for Render US IPs)
+    try:
+        cg_id = ''
+        if 'BTC' in symbol: cg_id = 'bitcoin'
+        elif 'ETH' in symbol: cg_id = 'ethereum'
+        elif 'SOL' in symbol: cg_id = 'solana'
+        elif 'XAU' in symbol or 'PAXG' in symbol: cg_id = 'pax-gold'
+        
+        if cg_id:
+            url = f"https://api.coingecko.com/api/v3/simple/price?ids={cg_id}&vs_currencies=usd"
+            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(req, timeout=5) as response:
+                data = json.loads(response.read().decode())
+                return float(data[cg_id]['usd'])
     except Exception:
         return None
+    return None
 
 def execute_trade(symbol, side, price, reason):
     qty = POSITION_SIZES.get(symbol, 0.01)
@@ -82,7 +100,7 @@ def execute_trade(symbol, side, price, reason):
     active_trades[symbol] = True
 
 # ==========================================
-# BOT LOGIC LOOP (RUNS IN BACKGROUND)
+# BOT LOGIC LOOP
 # ==========================================
 def bot_loop():
     print(f"[{datetime.now().strftime('%H:%M:%S')}] High-Frequency Bot Engine Started (ETH, GOLD, SOL, BTC)...")
@@ -114,7 +132,7 @@ def bot_loop():
         time.sleep(CHECK_INTERVAL)
 
 # ==========================================
-# WEB SERVER (RUNS IN MAIN THREAD FOR RENDER)
+# WEB SERVER
 # ==========================================
 class SimpleHandler(BaseHTTPRequestHandler):
     def do_GET(self):
