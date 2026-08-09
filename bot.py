@@ -1,6 +1,6 @@
 import time
 import requests
-import numpy as np
+import math
 from datetime import datetime
 
 # ==========================================
@@ -14,7 +14,7 @@ SYMBOLS = [
     'PAXG-USDT'  # Gold Alternative
 ]
 
-# Updated Position Quantities as per requested ratio
+# Quantities as per requested ratio
 POSITION_SIZES = {
     'BTC-USDT': 0.035,
     'ETH-USDT': 50.0,
@@ -30,35 +30,47 @@ price_history = {symbol: [] for symbol in SYMBOLS}
 active_trades = {symbol: False for symbol in SYMBOLS}
 
 # ==========================================
-# TECHNICAL INDICATORS
+# TECHNICAL INDICATORS (PURE PYTHON)
 # ==========================================
 def calculate_ema(prices, period):
     if len(prices) < period:
         return None
-    weights = np.exp(np.linspace(-1., 0., period))
-    weights /= weights.sum()
-    return float(np.convolve(prices, weights, mode='full')[:len(prices)][-1])
+    k = 2 / (period + 1)
+    ema = prices[0]
+    for price in prices[1:]:
+        ema = (price * k) + (ema * (1 - k))
+    return ema
 
 def calculate_rsi(prices, period=14):
     if len(prices) < period + 1:
         return 50
-    deltas = np.diff(prices)
-    seed = deltas[:period+1]
-    up = seed[seed >= 0].sum()/period
-    down = -seed[seed < 0].sum()/period
-    if down == 0:
+    gains = []
+    losses = []
+    for i in range(1, len(prices)):
+        change = prices[i] - prices[i-1]
+        if change >= 0:
+            gains.append(change)
+            losses.append(0)
+        else:
+            gains.append(0)
+            losses.append(abs(change))
+            
+    avg_gain = sum(gains[-period:]) / period
+    avg_loss = sum(losses[-period:]) / period
+    
+    if avg_loss == 0:
         return 100
-    rs = up/down
-    return float(100 - (100 / (1 + rs)))
+    rs = avg_gain / avg_loss
+    return 100 - (100 / (1 + rs))
 
 def calculate_bollinger_bands(prices, period=20):
     if len(prices) < period:
         return None, None
-    sma = np.mean(prices[-period:])
-    std = np.std(prices[-period:])
-    upper = sma + (2 * std)
-    lower = sma - (2 * std)
-    return float(upper), float(lower)
+    sub_prices = prices[-period:]
+    sma = sum(sub_prices) / period
+    variance = sum((x - sma) ** 2 for x in sub_prices) / period
+    std = math.sqrt(variance)
+    return sma + (2 * std), sma - (2 * std)
 
 # ==========================================
 # FETCH PRICE & EXECUTE
@@ -93,14 +105,14 @@ def analyze_market_and_trade(symbol, current_price):
     if len(history) > 50:
         history.pop(0)
 
-    if len(history) < 10:
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] [{symbol}] Price: {current_price} | Building Indicator Data ({len(history)}/10)...")
+    if len(history) < 5:
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] [{symbol}] Price: {current_price} | Building Indicator Data ({len(history)}/5)...")
         return
 
-    ema_fast = calculate_ema(history, 5)
-    ema_slow = calculate_ema(history, 10)
-    rsi = calculate_rsi(history, 14)
-    upper_bb, lower_bb = calculate_bollinger_bands(history, 15)
+    ema_fast = calculate_ema(history, 3)
+    ema_slow = calculate_ema(history, 5)
+    rsi = calculate_rsi(history, 7)
+    upper_bb, lower_bb = calculate_bollinger_bands(history, 10)
 
     print(f"[{datetime.now().strftime('%H:%M:%S')}] [{symbol}] Price: {current_price} | RSI: {round(rsi,1)} | Fast EMA: {round(ema_fast,1) if ema_fast else 'N/A'}")
 
@@ -132,7 +144,7 @@ def analyze_market_and_trade(symbol, current_price):
 # MAIN LOOP
 # ==========================================
 def main():
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] High-Frequency Engine Active (5x Leverage & Updated Lot Sizes)...")
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] High-Frequency Engine Active (5x Leverage & Standard Libs)...")
     
     while True:
         for symbol in SYMBOLS:
