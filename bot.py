@@ -117,12 +117,10 @@ class SimpleHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args): pass
 
 def main():
-    # 1. Start bot in a background thread
     bot_thread = threading.Thread(target=bot_loop)
     bot_thread.daemon = True
     bot_thread.start()
 
-    # 2. Start web server in the main thread so Render detects it instantly
     port = int(os.environ.get('PORT', 10000))
     server_address = ('0.0.0.0', port)
     print(f"[{datetime.now().strftime('%H:%M:%S')}] Web Server binding to port {port} for Render...")
@@ -131,4 +129,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    /
