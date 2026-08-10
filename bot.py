@@ -20,7 +20,6 @@ active_trades = {
     'BTCUSDT': None
 }
 
-# Corrected quantities matching margin requirements and docs decimals
 QUANTITIES = {
     'SOLUSDT': 5,     
     'BTCUSDT': 0.035     
@@ -42,6 +41,7 @@ def place_shark_order(symbol, side, quantity):
         
         timestamp = str(int(time.time() * 1000))
         
+        # Added leverage: 5 to use your 5x margin setting properly
         params = {
             'timestamp': timestamp,
             'placeType': 'ORDER_FORM',
@@ -51,6 +51,7 @@ def place_shark_order(symbol, side, quantity):
             'type': 'MARKET',
             'reduceOnly': False,
             'marginAsset': 'INR', 
+            'leverage': 5,
             'deviceType': 'WEB',
             'userCategory': 'EXTERNAL'
         }
@@ -67,8 +68,9 @@ def place_shark_order(symbol, side, quantity):
         response = requests.post(url, data=data_string, headers=headers)
         res_data = response.json()
         
-        if response.status_code == 200 and (res_data.get('success') or res_data.get('result') or 'error' not in res_data):
-            logging.info(f"Shark Exchange Order Placed Successfully for {symbol}!")
+        # Checking for 'id' in response since exchange returns order ID on success
+        if response.status_code == 200 and ('id' in res_data or res_data.get('success') or res_data.get('result')):
+            logging.info(f"Shark Exchange Order Placed Successfully for {symbol} | Order ID: {res_data.get('id')}")
             return True
         else:
             logging.error(f"Shark Exchange Order Failed: {res_data}")
@@ -145,7 +147,7 @@ def check_strategies(symbol, data):
 
 def run_trading_bot():
     global active_trades
-    logging.info("Shark Exchange Margin-Optimized Bot Running...")
+    logging.info("Shark Exchange 5x Leverage Bot Running...")
     symbols = ['SOLUSDT', 'BTCUSDT']
 
     while True:
@@ -161,7 +163,7 @@ def run_trading_bot():
                     strategy_name, trade_side = check_strategies(symbol, data)
                     if strategy_name and trade_side:
                         qty = QUANTITIES[symbol]
-                        logging.info(f"SIGNAL: {strategy_name}! Placing Order...")
+                        logging.info(f"SIGNAL: {strategy_name}! Placing 5x Order...")
                         success = place_shark_order(symbol, trade_side, qty)
                         if success:
                             active_trades[symbol] = {'side': trade_side, 'quantity': qty}
