@@ -11,7 +11,7 @@ import pandas_ta as ta
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - INFO - %(message)s')
 
 active_trade = None  
-ENTRY_QUANTITY = 21.0
+ENTRY_QUANTITY = 21.0  # Aapki quantity
 
 # --- API KEYS ---
 API_KEY = 'b450a76a2cf0724b0e2dddd69cd7675a' 
@@ -44,7 +44,7 @@ def fetch_market_data():
 
         df = pd.DataFrame(bars, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
         
-        # Calculate Indicators (EMA, MACD, RSI, Bollinger Bands)
+        # Calculate Indicators
         df.ta.ema(length=50, append=True)
         df.ta.ema(length=200, append=True)
         df.ta.macd(fast=12, slow=26, signal=9, append=True)
@@ -65,17 +65,9 @@ def fetch_market_data():
         logging.error(f"Data fetch error: {e}")
         return None, None, None, None, None, None
 
-# --- MULTIPLE HIGH-ACCURACY STRATEGIES ---
 def check_strategies(price, ema_50, ema_200, macd_line, signal_line, rsi):
-    """Inme se koi bhi ek strategy pehle match hogi toh trade mil jayegi."""
-    
-    # Strategy 1: Trend & Momentum Crossover (EMA 50 > 200 + MACD Bullish + RSI healthy)
     strat_1 = (price > ema_50) and (ema_50 > ema_200) and (macd_line > signal_line) and (45 <= rsi <= 70)
-    
-    # Strategy 2: Strong RSI Bounce (RSI oversold se recover ho raha ho aur MACD upar ho)
     strat_2 = (rsi < 40) and (macd_line > signal_line) and (price > ema_200)
-    
-    # Strategy 3: Quick Scalp Momentum (Fast MACD crossover with decent RSI)
     strat_3 = (macd_line > signal_line) and (50 <= rsi <= 75) and (price > ema_50)
 
     if strat_1:
@@ -101,15 +93,26 @@ def manage_active_trade(current_price):
             logging.info(f"TSL updated to: {active_trade['sl']:.2f}")
 
     if current_price <= active_trade['sl']:
-        logging.info(f"SL/TSL Hit! Trade Closed at: {current_price}")
-        active_trade = None  # Lock khul gaya, ab doosri trade lee ja sakegi
+        logging.info(f"SL/TSL Hit! Closing trade on exchange...")
+        try:
+            exchange.create_market_order('SOLUSDT', 'sell', active_trade['quantity'])
+            logging.info("Real Exit Order Executed Successfully!")
+        except Exception as e:
+            logging.error(f"Exit order error: {e}")
+        active_trade = None  
+        
     elif current_price >= target:
-        logging.info(f"Target Hit! Trade Closed at: {current_price}")
-        active_trade = None  # Lock khul gaya
+        logging.info(f"Target Hit! Closing trade on exchange...")
+        try:
+            exchange.create_market_order('SOLUSDT', 'sell', active_trade['quantity'])
+            logging.info("Real Target Order Executed Successfully!")
+        except Exception as e:
+            logging.error(f"Exit order error: {e}")
+        active_trade = None  
 
 def run_trading_bot():
     global active_trade
-    logging.info("Multi-Strategy Trading Bot Started...")
+    logging.info("Real-Execution Multi-Strategy Trading Bot Started...")
 
     while True:
         try:
@@ -120,24 +123,28 @@ def run_trading_bot():
                 
             logging.info(f"SCAN - Price: {price:.2f} | RSI: {rsi:.2f} | Active Trade: {active_trade is not None}")
 
-            # Rule: Jab tak active trade chal rahi hai, doosri entry nahi hogi
             if active_trade is not None:
                 manage_active_trade(price)
             else:
                 matched_strategy = check_strategies(price, ema_50, ema_200, macd, signal, rsi)
                 
                 if matched_strategy:
-                    logging.info(f"SIGNAL MATCHED via {matched_strategy}! Opening Trade...")
+                    logging.info(f"SIGNAL MATCHED via {matched_strategy}! Placing REAL Buy Order on Exchange...")
                     
-                    active_trade = {
-                        'strategy': matched_strategy,
-                        'entry_price': price,
-                        'quantity': ENTRY_QUANTITY,
-                        'sl': price * 0.985,      # 1.5% Initial Stop Loss
-                        'target': price * 1.03,   # 3% Target
-                        'highest_price': price
-                    }
-                    logging.info(f"Trade Executed: {active_trade}")
+                    try:
+                        order = exchange.create_market_order('SOLUSDT', 'buy', ENTRY_QUANTITY)
+                        logging.info(f"REAL ORDER PLACED SUCCESSFULLY: {order}")
+                        
+                        active_trade = {
+                            'strategy': matched_strategy,
+                            'entry_price': price,
+                            'quantity': ENTRY_QUANTITY,
+                            'sl': price * 0.985,      
+                            'target': price * 1.03,   
+                            'highest_price': price
+                        }
+                    except Exception as order_error:
+                        logging.error(f"Real Order Execution Failed: {order_error}")
 
             time.sleep(30)
         except Exception as e:
@@ -147,7 +154,7 @@ def run_trading_bot():
 app = Flask(__name__)
 @app.route('/')
 def keep_alive():
-    return "Multi-Strategy Trading Bot is Live!"
+    return "Real Execution Trading Bot is Live!"
 
 if __name__ == "__main__":
     bot_thread = threading.Thread(target=run_trading_bot)
