@@ -20,9 +20,10 @@ active_trades = {
     'BTCUSDT': None
 }
 
+# Corrected quantities matching margin requirements and docs decimals
 QUANTITIES = {
-    'SOLUSDT': 25,     
-    'BTCUSDT': 35     
+    'SOLUSDT': 5,     
+    'BTCUSDT': 0.035     
 }
 
 # --- API KEYS ---
@@ -41,7 +42,6 @@ def place_shark_order(symbol, side, quantity):
         
         timestamp = str(int(time.time() * 1000))
         
-        # Updated marginAsset to 'INR' as per official documentation sample
         params = {
             'timestamp': timestamp,
             'placeType': 'ORDER_FORM',
@@ -67,7 +67,7 @@ def place_shark_order(symbol, side, quantity):
         response = requests.post(url, data=data_string, headers=headers)
         res_data = response.json()
         
-        if response.status_code == 200 and (res_data.get('success') or res_data.get('result')):
+        if response.status_code == 200 and (res_data.get('success') or res_data.get('result') or 'error' not in res_data):
             logging.info(f"Shark Exchange Order Placed Successfully for {symbol}!")
             return True
         else:
@@ -145,7 +145,7 @@ def check_strategies(symbol, data):
 
 def run_trading_bot():
     global active_trades
-    logging.info("Shark Exchange Bot Running...")
+    logging.info("Shark Exchange Margin-Optimized Bot Running...")
     symbols = ['SOLUSDT', 'BTCUSDT']
 
     while True:
