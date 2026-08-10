@@ -29,7 +29,6 @@ QUANTITIES = {
 API_KEY = '0ba307c551a7b66600a0d8a7a5586c20' 
 API_SECRET = '09abb3d1bf0ad3f6fe453474a220acd2'
 
-# Shark Exchange Correct Base URL from Docs
 BASE_URL = 'https://api.sharkexchange.in'
 
 def generate_signature(api_secret, data_to_sign):
@@ -40,15 +39,14 @@ def place_shark_order(symbol, side, quantity):
         endpoint = '/v1/order/place-order'
         url = BASE_URL + endpoint
         
-        # Current timestamp in milliseconds
         timestamp = str(int(time.time() * 1000))
         
-        # Parameters matching Shark Exchange documentation
+        # Exact format matching Shark Exchange documentation sample
         params = {
             'timestamp': timestamp,
             'placeType': 'ORDER_FORM',
             'quantity': quantity,
-            'side': side.upper(), # 'BUY' or 'SELL'
+            'side': side.upper(),
             'symbol': symbol,
             'type': 'MARKET',
             'reduceOnly': False,
@@ -57,7 +55,6 @@ def place_shark_order(symbol, side, quantity):
             'userCategory': 'EXTERNAL'
         }
         
-        # Sort keys and create data string for signature
         data_string = json.dumps(params, sort_keys=True, separators=(',', ':'))
         signature = generate_signature(API_SECRET, data_string)
         
@@ -70,7 +67,7 @@ def place_shark_order(symbol, side, quantity):
         response = requests.post(url, data=data_string, headers=headers)
         res_data = response.json()
         
-        if response.status_code == 200 and res_data.get('success'):
+        if response.status_code == 200 and (res_data.get('success') or res_data.get('result')):
             logging.info(f"Shark Exchange Order Placed Successfully for {symbol}!")
             return True
         else:
@@ -82,7 +79,6 @@ def place_shark_order(symbol, side, quantity):
 
 def fetch_market_data(symbol):
     try:
-        # Public data ke liye CCXT Delta use kar sakte hain kyunki market data same hai
         ex = ccxt.delta({'enableRateLimit': True})
         bars = ex.fetch_ohlcv(symbol, timeframe='15m', limit=250)
         if not bars: return None
@@ -149,7 +145,7 @@ def check_strategies(symbol, data):
 
 def run_trading_bot():
     global active_trades
-    logging.info("Shark Exchange Official API Bot Started...")
+    logging.info("Shark Exchange Bot Running...")
     symbols = ['SOLUSDT', 'BTCUSDT']
 
     while True:
@@ -165,7 +161,7 @@ def run_trading_bot():
                     strategy_name, trade_side = check_strategies(symbol, data)
                     if strategy_name and trade_side:
                         qty = QUANTITIES[symbol]
-                        logging.info(f"SIGNAL: {strategy_name}! Placing Order on Shark Exchange...")
+                        logging.info(f"SIGNAL: {strategy_name}! Placing Order...")
                         success = place_shark_order(symbol, trade_side, qty)
                         if success:
                             active_trades[symbol] = {'side': trade_side, 'quantity': qty}
@@ -178,7 +174,7 @@ app = Flask(__name__)
 @app.route('/')
 def keep_alive():
     ip = urllib.request.urlopen('https://api.ipify.org').read().decode('utf8')
-    return f"Shark Bot is Live! Server IP: {ip}"
+    return f"Bot is Live! IP: {ip}"
 
 if __name__ == "__main__":
     bot_thread = threading.Thread(target=run_trading_bot)
