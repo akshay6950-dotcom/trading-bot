@@ -10,8 +10,17 @@ import pandas_ta as ta
 # Logging configuration
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - INFO - %(message)s')
 
-active_trade = None  
-ENTRY_QUANTITY = 21.0  # Aapki quantity
+# Active trades tracker for both coins
+active_trades = {
+    'SOLUSDT': None,
+    'BTCUSDT': None
+}
+
+# Fixed Quantities
+QUANTITIES = {
+    'SOLUSDT': 25.0,     
+    'BTCUSDT': 0.035     
+}
 
 # --- API KEYS ---
 API_KEY = 'b450a76a2cf0724b0e2dddd69cd7675a' 
@@ -28,19 +37,13 @@ try:
 except Exception as e:
     logging.error(f"Exchange connection error: {e}")
 
-def fetch_market_data():
-    """Fetches LIVE data and calculates indicators."""
+def fetch_market_data(symbol):
+    """Fetches LIVE data and calculates indicators for specific symbol."""
     try:
-        target_symbol = 'SOLUSDT' 
-        
-        try:
-            bars = exchange.fetch_ohlcv(target_symbol, timeframe='15m', limit=250)
-        except Exception as api_error:
-            bars = []
-
+        bars = exchange.fetch_ohlcv(symbol, timeframe='15m', limit=250)
         if not bars or len(bars) == 0:
-            logging.error(f"Exchange ne {target_symbol} ke liye koi data nahi bheja!")
-            return None, None, None, None, None, None
+            logging.error(f"Exchange ne {symbol} ke liye koi data nahi bheja!")
+            return None
 
         df = pd.DataFrame(bars, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
         
@@ -49,104 +52,133 @@ def fetch_market_data():
         df.ta.ema(length=200, append=True)
         df.ta.macd(fast=12, slow=26, signal=9, append=True)
         df.ta.rsi(length=14, append=True)
-        df.ta.bbands(length=20, std=2, append=True)
+        df['vol_ma'] = df['volume'].rolling(window=20).mean()
 
         latest = df.iloc[-1]
         
-        current_price = float(latest['close'])
-        ema_50 = float(latest['EMA_50'])
-        ema_200 = float(latest['EMA_200'])
-        macd_line = float(latest['MACD_12_26_9'])
-        signal_line = float(latest['MACDs_12_26_9'])
-        rsi = float(latest['RSI_14'])
-        
-        return current_price, ema_50, ema_200, macd_line, signal_line, rsi
+        data = {
+            'price': float(latest['close']),
+            'ema_50': float(latest['EMA_50']),
+            'ema_200': float(latest['EMA_200']),
+            'macd': float(latest['MACD_12_26_9']),
+            'signal': float(latest['MACDs_12_26_9']),
+            'rsi': float(latest['RSI_14']),
+            'vol': float(latest['volume']),
+            'vol_ma': float(latest['vol_ma'])
+        }
+        return data
     except Exception as e:
-        logging.error(f"Data fetch error: {e}")
-        return None, None, None, None, None, None
+        logging.error(f"Data fetch error for {symbol}: {e}")
+        return None
 
-def check_strategies(price, ema_50, ema_200, macd_line, signal_line, rsi):
-    strat_1 = (price > ema_50) and (ema_50 > ema_200) and (macd_line > signal_line) and (45 <= rsi <= 70)
-    strat_2 = (rsi < 40) and (macd_line > signal_line) and (price > ema_200)
-    strat_3 = (macd_line > signal_line) and (50 <= rsi <= 75) and (price > ema_50)
+def check_strategies(symbol, data):
+    price, ema_50, ema_200 = data['price'], data['ema_50'], data['ema_200']
+    macd, signal, rsi = data['macd'], data['signal'], data['rsi']
+    vol, vol_ma = data['vol'], data['vol_ma']
 
-    if strat_1:
-        return "Strategy 1 (Trend & Momentum)"
-    elif strat_2:
-        return "Strategy 2 (RSI Dip Recovery)"
-    elif strat_3:
-        return "Strategy 3 (Quick Scalp Momentum)"
+    if symbol == 'SOLUSDT':
+        # --- SOL Ki Purani 3 Strategies (UNCHANGED) ---
+        strat_1 = (price > ema_50) and (ema_50 > ema_200) and (macd > signal) and (45 <= rsi <= 70)
+        strat_2 = (rsi < 40) and (macd > signal) and (price > ema_200)
+        strat_3 = (macd > signal) and (50 <= rsi <= 75) and (price > ema_50)
+
+        if strat_1: return "SOL Strat 1 (Trend & Momentum)"
+        elif strat_2: return "SOL Strat 2 (RSI Dip Recovery)"
+        elif strat_3: return "SOL Strat 3 (Quick Scalp Momentum)"
+    
+    elif symbol == 'BTCUSDT':
+        # --- BTC Ki 3 Nayi Strategies (For MORE TRADES) ---
+        
+        # 1. Volume Breakout (Purani wali)
+        btc_strat_1 = (price > ema_50) and (macd > signal) and (50 < rsi < 68) and (vol > vol_ma * 1.2)
+        
+        # 2. Trend & Momentum (Market flow pakadne ke liye)
+        btc_strat_2 = (price > ema_50) and (ema_50 > ema_200) and (macd > signal) and (45 <= rsi <= 70)
+        
+        # 3. Dip Recovery (Jab market thoda gir kar wapas uthe)
+        btc_strat_3 = (rsi < 40) and (macd > signal) and (price > ema_200)
+
+        if btc_strat_1: return "BTC Strat 1 (Volume Breakout)"
+        elif btc_strat_2: return "BTC Strat 2 (Trend & Momentum)"
+        elif btc_strat_3: return "BTC Strat 3 (RSI Dip Recovery)"
     
     return None
 
-def manage_active_trade(current_price):
-    global active_trade
-    if not active_trade: return
+def manage_active_trade(symbol, current_price):
+    global active_trades
+    trade = active_trades[symbol]
+    if not trade: return
 
-    target = active_trade['target']
+    target = trade['target']
     
-    if current_price > active_trade['highest_price']:
-        active_trade['highest_price'] = current_price
+    # Trailing Stop Loss Logic (Same as SOL)
+    if current_price > trade['highest_price']:
+        trade['highest_price'] = current_price
         new_tsl = current_price * 0.985  # 1.5% Trailing Stop Loss
-        if new_tsl > active_trade['sl']:
-            active_trade['sl'] = new_tsl
-            logging.info(f"TSL updated to: {active_trade['sl']:.2f}")
+        if new_tsl > trade['sl']:
+            trade['sl'] = new_tsl
+            logging.info(f"[{symbol}] TSL updated to: {trade['sl']:.2f}")
 
-    if current_price <= active_trade['sl']:
-        logging.info(f"SL/TSL Hit! Closing trade on exchange...")
+    # Stop Loss / Trailing Stop Loss Hit
+    if current_price <= trade['sl']:
+        logging.info(f"[{symbol}] SL/TSL Hit! Closing trade on exchange...")
         try:
-            exchange.create_market_order('SOLUSDT', 'sell', active_trade['quantity'])
-            logging.info("Real Exit Order Executed Successfully!")
+            exchange.create_market_order(symbol, 'sell', trade['quantity'])
+            logging.info(f"[{symbol}] Real Exit Order Executed Successfully!")
         except Exception as e:
-            logging.error(f"Exit order error: {e}")
-        active_trade = None  
+            logging.error(f"[{symbol}] Exit order error: {e}")
+        active_trades[symbol] = None  
         
+    # Target Hit
     elif current_price >= target:
-        logging.info(f"Target Hit! Closing trade on exchange...")
+        logging.info(f"[{symbol}] Target Hit! Closing trade on exchange...")
         try:
-            exchange.create_market_order('SOLUSDT', 'sell', active_trade['quantity'])
-            logging.info("Real Target Order Executed Successfully!")
+            exchange.create_market_order(symbol, 'sell', trade['quantity'])
+            logging.info(f"[{symbol}] Real Target Order Executed Successfully!")
         except Exception as e:
-            logging.error(f"Exit order error: {e}")
-        active_trade = None  
+            logging.error(f"[{symbol}] Exit order error: {e}")
+        active_trades[symbol] = None  
 
 def run_trading_bot():
-    global active_trade
-    logging.info("Real-Execution Multi-Strategy Trading Bot Started...")
+    global active_trades
+    logging.info("Real-Execution DUAL Bot (SOL + 3 BTC Strats) Started...")
+    
+    symbols = ['SOLUSDT', 'BTCUSDT']
 
     while True:
         try:
-            price, ema_50, ema_200, macd, signal, rsi = fetch_market_data()
-            if price is None:
-                time.sleep(10)
-                continue
-                
-            logging.info(f"SCAN - Price: {price:.2f} | RSI: {rsi:.2f} | Active Trade: {active_trade is not None}")
-
-            if active_trade is not None:
-                manage_active_trade(price)
-            else:
-                matched_strategy = check_strategies(price, ema_50, ema_200, macd, signal, rsi)
-                
-                if matched_strategy:
-                    logging.info(f"SIGNAL MATCHED via {matched_strategy}! Placing REAL Buy Order on Exchange...")
+            for symbol in symbols:
+                data = fetch_market_data(symbol)
+                if not data: continue
                     
-                    try:
-                        order = exchange.create_market_order('SOLUSDT', 'buy', ENTRY_QUANTITY)
-                        logging.info(f"REAL ORDER PLACED SUCCESSFULLY: {order}")
-                        
-                        active_trade = {
-                            'strategy': matched_strategy,
-                            'entry_price': price,
-                            'quantity': ENTRY_QUANTITY,
-                            'sl': price * 0.985,      
-                            'target': price * 1.03,   
-                            'highest_price': price
-                        }
-                    except Exception as order_error:
-                        logging.error(f"Real Order Execution Failed: {order_error}")
+                price, rsi = data['price'], data['rsi']
+                logging.info(f"SCAN {symbol} - Price: {price:.2f} | RSI: {rsi:.2f} | Active Trade: {active_trades[symbol] is not None}")
 
-            time.sleep(30)
+                if active_trades[symbol] is not None:
+                    manage_active_trade(symbol, price)
+                else:
+                    matched_strategy = check_strategies(symbol, data)
+                    
+                    if matched_strategy:
+                        qty = QUANTITIES[symbol]
+                        logging.info(f"SIGNAL MATCHED via {matched_strategy}! Placing REAL Buy Order...")
+                        
+                        try:
+                            order = exchange.create_market_order(symbol, 'buy', qty)
+                            logging.info(f"REAL ORDER PLACED SUCCESSFULLY: {order}")
+                            
+                            active_trades[symbol] = {
+                                'strategy': matched_strategy,
+                                'entry_price': price,
+                                'quantity': qty,
+                                'sl': price * 0.985,      # 1.5% Stop Loss
+                                'target': price * 1.03,   # 3% Target
+                                'highest_price': price
+                            }
+                        except Exception as order_error:
+                            logging.error(f"Real Order Execution Failed for {symbol}: {order_error}")
+
+            time.sleep(30) # Scan delay
         except Exception as e:
             logging.error(f"Bot loop error: {e}")
             time.sleep(10)
@@ -154,7 +186,7 @@ def run_trading_bot():
 app = Flask(__name__)
 @app.route('/')
 def keep_alive():
-    return "Real Execution Trading Bot is Live!"
+    return "Real Execution DUAL Bot (With Upgraded BTC Strats) is Live!"
 
 if __name__ == "__main__":
     bot_thread = threading.Thread(target=run_trading_bot)
