@@ -15,14 +15,15 @@ import pandas_ta as ta
 # Logging configuration
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - INFO - %(message)s')
 
+# Independent tracking per currency: 1 active trade per symbol (Max 2 total)
 active_trades = {
     'SOLUSDT': None,
     'BTCUSDT': None
 }
 
 QUANTITIES = {
-    'SOLUSDT': 5,     
-    'BTCUSDT': 0.035     
+    'SOLUSDT': 25,     
+    'BTCUSDT': 0.35     
 }
 
 # --- API KEYS ---
@@ -41,7 +42,6 @@ def place_shark_order(symbol, side, quantity):
         
         timestamp = str(int(time.time() * 1000))
         
-        # Added leverage: 5 to use your 5x margin setting properly
         params = {
             'timestamp': timestamp,
             'placeType': 'ORDER_FORM',
@@ -68,7 +68,6 @@ def place_shark_order(symbol, side, quantity):
         response = requests.post(url, data=data_string, headers=headers)
         res_data = response.json()
         
-        # Checking for 'id' in response since exchange returns order ID on success
         if response.status_code == 200 and ('id' in res_data or res_data.get('success') or res_data.get('result')):
             logging.info(f"Shark Exchange Order Placed Successfully for {symbol} | Order ID: {res_data.get('id')}")
             return True
@@ -111,6 +110,7 @@ def check_strategies(symbol, data):
     macd, signal, rsi = data['macd'], data['signal'], data['rsi']
     vol, vol_ma = data['vol'], data['vol_ma']
 
+    # ================= LONG STRATEGIES (BUY) =================
     if symbol == 'SOLUSDT':
         long_1 = (price > ema_50) and (ema_50 > ema_200) and (macd > signal) and (45 <= rsi <= 70)
         long_2 = (rsi < 40) and (macd > signal) and (price > ema_200)
@@ -127,6 +127,7 @@ def check_strategies(symbol, data):
         elif long_2: return "BTC Long 2", 'buy'
         elif long_3: return "BTC Long 3", 'buy'
 
+    # ================= SHORT STRATEGIES (SELL) =================
     if symbol == 'SOLUSDT':
         short_1 = (price < ema_50) and (ema_50 < ema_200) and (macd < signal) and (30 <= rsi <= 55)
         short_2 = (rsi > 60) and (macd < signal) and (price < ema_200)
@@ -145,9 +146,40 @@ def check_strategies(symbol, data):
 
     return None, None
 
+def manage_active_trade(symbol, current_price):
+    global active_trades
+    trade = active_trades[symbol]
+    if not trade: return
+
+    side = trade['side']
+    
+    if side == 'buy': # LONG TRAILING SL
+        if current_price > trade['extreme_price']:
+            trade['extreme_price'] = current_price
+            new_tsl = current_price * 0.985
+            if new_tsl > trade['sl']:
+                trade['sl'] = new_tsl
+                logging.info(f"[{symbol} LONG] Trailing SL updated to: {trade['sl']:.2f}")
+
+        if current_price <= trade['sl']:
+            logging.info(f"[{symbol}] LONG Trailing SL Hit! Closing trade slot...")
+            active_trades[symbol] = None
+            
+    elif side == 'sell': # SHORT TRAILING SL
+        if current_price < trade['extreme_price']:
+            trade['extreme_price'] = current_price
+            new_tsl = current_price * 1.015 
+            if new_tsl < trade['sl']:
+                trade['sl'] = new_tsl
+                logging.info(f"[{symbol} SHORT] Trailing SL updated to: {trade['sl']:.2f}")
+
+        if current_price >= trade['sl']:
+            logging.info(f"[{symbol}] SHORT Trailing SL Hit! Closing trade slot...")
+            active_trades[symbol] = None
+
 def run_trading_bot():
     global active_trades
-    logging.info("Shark Exchange 5x Leverage Bot Running...")
+    logging.info("Shark Exchange 5x Dual-Currency Bot Started...")
     symbols = ['SOLUSDT', 'BTCUSDT']
 
     while True:
@@ -157,26 +189,41 @@ def run_trading_bot():
                 if not data: continue
                     
                 price, rsi = data['price'], data['rsi']
-                logging.info(f"SCAN {symbol} - Price: {price:.2f} | RSI: {rsi:.2f}")
+                status = f"Active: {active_trades[symbol]['side'].upper()}" if active_trades[symbol] else "Active: None"
+                logging.info(f"SCAN {symbol} - Price: {price:.2f} | RSI: {rsi:.2f} | {status}")
 
-                if active_trades[symbol] is None:
+                if active_trades[symbol] is not None:
+                    manage_active_trade(symbol, price)
+                else:
                     strategy_name, trade_side = check_strategies(symbol, data)
+                    
                     if strategy_name and trade_side:
                         qty = QUANTITIES[symbol]
-                        logging.info(f"SIGNAL: {strategy_name}! Placing 5x Order...")
+                        logging.info(f"SIGNAL: {strategy_name}! Placing 5x REAL {trade_side.upper()} Order...")
+                        
                         success = place_shark_order(symbol, trade_side, qty)
                         if success:
-                            active_trades[symbol] = {'side': trade_side, 'quantity': qty}
+                            sl = price * 0.985 if trade_side == 'buy' else price * 1.015
+                            active_trades[symbol] = {
+                                'side': trade_side,
+                                'strategy': strategy_name,
+                                'entry_price': price,
+                                'quantity': qty,
+                                'sl': sl,      
+                                'extreme_price': price 
+                            }
+                            logging.info(f"REAL ORDER PLACED SUCCESSFULLY FOR {symbol}!")
 
             time.sleep(30)
         except Exception as e:
+            logging.error(f"Bot loop error: {e}")
             time.sleep(10)
 
 app = Flask(__name__)
 @app.route('/')
 def keep_alive():
     ip = urllib.request.urlopen('https://api.ipify.org').read().decode('utf8')
-    return f"Bot is Live! IP: {ip}"
+    return f"Dual-Currency 5x Bot is Live! Server IP: {ip}"
 
 if __name__ == "__main__":
     bot_thread = threading.Thread(target=run_trading_bot)
