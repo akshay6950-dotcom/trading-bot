@@ -10,7 +10,7 @@ import pandas_ta as ta
 # Logging configuration
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - INFO - %(message)s')
 
-# Active trades tracker for both coins
+# Active trades tracker - 'side' added to track long/short
 active_trades = {
     'SOLUSDT': None,
     'BTCUSDT': None
@@ -38,16 +38,13 @@ except Exception as e:
     logging.error(f"Exchange connection error: {e}")
 
 def fetch_market_data(symbol):
-    """Fetches LIVE data and calculates indicators for specific symbol."""
     try:
         bars = exchange.fetch_ohlcv(symbol, timeframe='15m', limit=250)
         if not bars or len(bars) == 0:
-            logging.error(f"Exchange ne {symbol} ke liye koi data nahi bheja!")
             return None
 
         df = pd.DataFrame(bars, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
         
-        # Calculate Indicators
         df.ta.ema(length=50, append=True)
         df.ta.ema(length=200, append=True)
         df.ta.macd(fast=12, slow=26, signal=9, append=True)
@@ -56,7 +53,7 @@ def fetch_market_data(symbol):
 
         latest = df.iloc[-1]
         
-        data = {
+        return {
             'price': float(latest['close']),
             'ema_50': float(latest['EMA_50']),
             'ema_200': float(latest['EMA_200']),
@@ -66,7 +63,6 @@ def fetch_market_data(symbol):
             'vol': float(latest['volume']),
             'vol_ma': float(latest['vol_ma'])
         }
-        return data
     except Exception as e:
         logging.error(f"Data fetch error for {symbol}: {e}")
         return None
@@ -76,72 +72,101 @@ def check_strategies(symbol, data):
     macd, signal, rsi = data['macd'], data['signal'], data['rsi']
     vol, vol_ma = data['vol'], data['vol_ma']
 
+    # ================= LONG STRATEGIES (BUY) =================
     if symbol == 'SOLUSDT':
-        # --- SOL Ki Purani 3 Strategies (UNCHANGED) ---
-        strat_1 = (price > ema_50) and (ema_50 > ema_200) and (macd > signal) and (45 <= rsi <= 70)
-        strat_2 = (rsi < 40) and (macd > signal) and (price > ema_200)
-        strat_3 = (macd > signal) and (50 <= rsi <= 75) and (price > ema_50)
-
-        if strat_1: return "SOL Strat 1 (Trend & Momentum)"
-        elif strat_2: return "SOL Strat 2 (RSI Dip Recovery)"
-        elif strat_3: return "SOL Strat 3 (Quick Scalp Momentum)"
-    
+        long_1 = (price > ema_50) and (ema_50 > ema_200) and (macd > signal) and (45 <= rsi <= 70)
+        long_2 = (rsi < 40) and (macd > signal) and (price > ema_200)
+        long_3 = (macd > signal) and (50 <= rsi <= 75) and (price > ema_50)
+        
+        if long_1: return "SOL Long 1", 'buy'
+        elif long_2: return "SOL Long 2", 'buy'
+        elif long_3: return "SOL Long 3", 'buy'
+        
     elif symbol == 'BTCUSDT':
-        # --- BTC Ki 3 Nayi Strategies (For MORE TRADES) ---
+        long_1 = (price > ema_50) and (macd > signal) and (50 < rsi < 68) and (vol > vol_ma * 1.2)
+        long_2 = (price > ema_50) and (ema_50 > ema_200) and (macd > signal) and (45 <= rsi <= 70)
+        long_3 = (rsi < 40) and (macd > signal) and (price > ema_200)
         
-        # 1. Volume Breakout (Purani wali)
-        btc_strat_1 = (price > ema_50) and (macd > signal) and (50 < rsi < 68) and (vol > vol_ma * 1.2)
-        
-        # 2. Trend & Momentum (Market flow pakadne ke liye)
-        btc_strat_2 = (price > ema_50) and (ema_50 > ema_200) and (macd > signal) and (45 <= rsi <= 70)
-        
-        # 3. Dip Recovery (Jab market thoda gir kar wapas uthe)
-        btc_strat_3 = (rsi < 40) and (macd > signal) and (price > ema_200)
+        if long_1: return "BTC Long 1", 'buy'
+        elif long_2: return "BTC Long 2", 'buy'
+        elif long_3: return "BTC Long 3", 'buy'
 
-        if btc_strat_1: return "BTC Strat 1 (Volume Breakout)"
-        elif btc_strat_2: return "BTC Strat 2 (Trend & Momentum)"
-        elif btc_strat_3: return "BTC Strat 3 (RSI Dip Recovery)"
-    
-    return None
+    # ================= SHORT STRATEGIES (SELL) =================
+    if symbol == 'SOLUSDT':
+        short_1 = (price < ema_50) and (ema_50 < ema_200) and (macd < signal) and (30 <= rsi <= 55)
+        short_2 = (rsi > 60) and (macd < signal) and (price < ema_200)
+        short_3 = (macd < signal) and (25 <= rsi <= 50) and (price < ema_50)
+        
+        if short_1: return "SOL Short 1", 'sell'
+        elif short_2: return "SOL Short 2", 'sell'
+        elif short_3: return "SOL Short 3", 'sell'
+        
+    elif symbol == 'BTCUSDT':
+        short_1 = (price < ema_50) and (macd < signal) and (32 < rsi < 50) and (vol > vol_ma * 1.2)
+        short_2 = (price < ema_50) and (ema_50 < ema_200) and (macd < signal) and (30 <= rsi <= 55)
+        short_3 = (rsi > 60) and (macd < signal) and (price < ema_200)
+        
+        if short_1: return "BTC Short 1", 'sell'
+        elif short_2: return "BTC Short 2", 'sell'
+        elif short_3: return "BTC Short 3", 'sell'
+
+    return None, None
 
 def manage_active_trade(symbol, current_price):
     global active_trades
     trade = active_trades[symbol]
     if not trade: return
 
-    target = trade['target']
+    side = trade['side']
+    qty = trade['quantity']
     
-    # Trailing Stop Loss Logic (Same as SOL)
-    if current_price > trade['highest_price']:
-        trade['highest_price'] = current_price
-        new_tsl = current_price * 0.985  # 1.5% Trailing Stop Loss
-        if new_tsl > trade['sl']:
-            trade['sl'] = new_tsl
-            logging.info(f"[{symbol}] TSL updated to: {trade['sl']:.2f}")
+    if side == 'buy': # LONG TRADE LOGIC
+        if current_price > trade['extreme_price']:
+            trade['extreme_price'] = current_price
+            new_tsl = current_price * 0.985
+            if new_tsl > trade['sl']:
+                trade['sl'] = new_tsl
+                logging.info(f"[{symbol} LONG] TSL updated to: {trade['sl']:.2f}")
 
-    # Stop Loss / Trailing Stop Loss Hit
-    if current_price <= trade['sl']:
-        logging.info(f"[{symbol}] SL/TSL Hit! Closing trade on exchange...")
-        try:
-            exchange.create_market_order(symbol, 'sell', trade['quantity'])
-            logging.info(f"[{symbol}] Real Exit Order Executed Successfully!")
-        except Exception as e:
-            logging.error(f"[{symbol}] Exit order error: {e}")
-        active_trades[symbol] = None  
-        
-    # Target Hit
-    elif current_price >= target:
-        logging.info(f"[{symbol}] Target Hit! Closing trade on exchange...")
-        try:
-            exchange.create_market_order(symbol, 'sell', trade['quantity'])
-            logging.info(f"[{symbol}] Real Target Order Executed Successfully!")
-        except Exception as e:
-            logging.error(f"[{symbol}] Exit order error: {e}")
-        active_trades[symbol] = None  
+        if current_price <= trade['sl']:
+            logging.info(f"[{symbol}] LONG SL/TSL Hit! Closing trade...")
+            try:
+                exchange.create_market_order(symbol, 'sell', qty)
+                active_trades[symbol] = None
+            except Exception as e: logging.error(f"Exit error: {e}")
+            
+        elif current_price >= trade['target']:
+            logging.info(f"[{symbol}] LONG Target Hit! Closing trade...")
+            try:
+                exchange.create_market_order(symbol, 'sell', qty)
+                active_trades[symbol] = None
+            except Exception as e: logging.error(f"Exit error: {e}")
+
+    elif side == 'sell': # SHORT TRADE LOGIC
+        if current_price < trade['extreme_price']:
+            trade['extreme_price'] = current_price
+            new_tsl = current_price * 1.015 # Short ka SL upar hota hai
+            if new_tsl < trade['sl']:
+                trade['sl'] = new_tsl
+                logging.info(f"[{symbol} SHORT] TSL updated to: {trade['sl']:.2f}")
+
+        if current_price >= trade['sl']:
+            logging.info(f"[{symbol}] SHORT SL/TSL Hit! Closing trade...")
+            try:
+                exchange.create_market_order(symbol, 'buy', qty) # Buy to cover short
+                active_trades[symbol] = None
+            except Exception as e: logging.error(f"Exit error: {e}")
+            
+        elif current_price <= trade['target']:
+            logging.info(f"[{symbol}] SHORT Target Hit! Closing trade...")
+            try:
+                exchange.create_market_order(symbol, 'buy', qty)
+                active_trades[symbol] = None
+            except Exception as e: logging.error(f"Exit error: {e}")
 
 def run_trading_bot():
     global active_trades
-    logging.info("Real-Execution DUAL Bot (SOL + 3 BTC Strats) Started...")
+    logging.info("Real-Execution LONG+SHORT DUAL Bot Started...")
     
     symbols = ['SOLUSDT', 'BTCUSDT']
 
@@ -152,33 +177,44 @@ def run_trading_bot():
                 if not data: continue
                     
                 price, rsi = data['price'], data['rsi']
-                logging.info(f"SCAN {symbol} - Price: {price:.2f} | RSI: {rsi:.2f} | Active Trade: {active_trades[symbol] is not None}")
+                status = f"Active: {active_trades[symbol]['side'].upper()}" if active_trades[symbol] else "Active: None"
+                logging.info(f"SCAN {symbol} - Price: {price:.2f} | RSI: {rsi:.2f} | {status}")
 
                 if active_trades[symbol] is not None:
                     manage_active_trade(symbol, price)
                 else:
-                    matched_strategy = check_strategies(symbol, data)
+                    strategy_name, trade_side = check_strategies(symbol, data)
                     
-                    if matched_strategy:
+                    if strategy_name and trade_side:
                         qty = QUANTITIES[symbol]
-                        logging.info(f"SIGNAL MATCHED via {matched_strategy}! Placing REAL Buy Order...")
+                        logging.info(f"SIGNAL: {strategy_name}! Placing REAL {trade_side.upper()} Order...")
                         
                         try:
-                            order = exchange.create_market_order(symbol, 'buy', qty)
-                            logging.info(f"REAL ORDER PLACED SUCCESSFULLY: {order}")
+                            # Execute the entry order (Buy for Long, Sell for Short)
+                            exchange.create_market_order(symbol, trade_side, qty)
                             
+                            # Calculate SL and Target based on direction
+                            if trade_side == 'buy':
+                                sl = price * 0.985
+                                target = price * 1.03
+                            else:
+                                sl = price * 1.015
+                                target = price * 0.97
+                                
                             active_trades[symbol] = {
-                                'strategy': matched_strategy,
+                                'side': trade_side,
+                                'strategy': strategy_name,
                                 'entry_price': price,
                                 'quantity': qty,
-                                'sl': price * 0.985,      # 1.5% Stop Loss
-                                'target': price * 1.03,   # 3% Target
-                                'highest_price': price
+                                'sl': sl,      
+                                'target': target,   
+                                'extreme_price': price # tracks highest for long, lowest for short
                             }
+                            logging.info(f"REAL ORDER PLACED SUCCESSFULLY!")
                         except Exception as order_error:
-                            logging.error(f"Real Order Execution Failed for {symbol}: {order_error}")
+                            logging.error(f"Real Order Failed for {symbol}: {order_error}")
 
-            time.sleep(30) # Scan delay
+            time.sleep(30)
         except Exception as e:
             logging.error(f"Bot loop error: {e}")
             time.sleep(10)
@@ -186,7 +222,7 @@ def run_trading_bot():
 app = Flask(__name__)
 @app.route('/')
 def keep_alive():
-    return "Real Execution DUAL Bot (With Upgraded BTC Strats) is Live!"
+    return "Real Execution DUAL (Long+Short) Bot is Live!"
 
 if __name__ == "__main__":
     bot_thread = threading.Thread(target=run_trading_bot)
