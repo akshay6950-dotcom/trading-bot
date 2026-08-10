@@ -17,15 +17,16 @@ active_trades = {
     'BTCUSDT': None
 }
 
-# Fixed Quantities (Updated: BTC is now 35 contracts = 0.035 BTC)
+# Fixed Quantities (Updated: BTC is now 35 contracts)
 QUANTITIES = {
     'SOLUSDT': 25,     
     'BTCUSDT': 35     
 }
 
 # --- API KEYS ---
-API_KEY = 'b450a76a2cf0724b0e2dddd69cd7675a' 
-API_SECRET = 'c8e6ef153aefea2dda2b36c0b3fad153'
+# Nayi API Key aur Secret update kar di gayi hai
+API_KEY = '0ba307c551a7b66600a0d8a7a5586c20' 
+API_SECRET = '09abb3d1bf0ad3f6fe453474a220acd2'
 
 # Connect to Exchange 
 try:
