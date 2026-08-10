@@ -17,14 +17,13 @@ active_trades = {
     'BTCUSDT': None
 }
 
-# Fixed Quantities (Updated: BTC is now 35 contracts)
+# Fixed Quantities (BTC is set to 35 contracts = 0.035 BTC)
 QUANTITIES = {
     'SOLUSDT': 25,     
     'BTCUSDT': 35     
 }
 
-# --- API KEYS ---
-# Nayi API Key aur Secret update kar di gayi hai
+# --- API KEYS (Directly Updated & Locked with IP 74.220.48.219) ---
 API_KEY = '0ba307c551a7b66600a0d8a7a5586c20' 
 API_SECRET = '09abb3d1bf0ad3f6fe453474a220acd2'
 
