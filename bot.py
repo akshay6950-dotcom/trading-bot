@@ -31,33 +31,61 @@ except Exception as e:
 def fetch_market_data():
     """Fetches LIVE data and calculates indicators."""
     try:
-        # SOL/USDT ka 15-minute timeframe ka real data fetch kar rahe hain
-        bars = exchange.fetch_ohlcv('SOLUSDT', timeframe='15m', limit=250)
+        target_symbol = 'SOLUSDT' 
+        
+        try:
+            bars = exchange.fetch_ohlcv(target_symbol, timeframe='15m', limit=250)
+        except Exception as api_error:
+            bars = []
+
+        if not bars or len(bars) == 0:
+            logging.error(f"Exchange ne {target_symbol} ke liye koi data nahi bheja!")
+            return None, None, None, None, None, None
+
         df = pd.DataFrame(bars, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
         
-        # Calculate Indicators (EMA, MACD, RSI) dynamically
+        # Calculate Indicators (EMA, MACD, RSI, Bollinger Bands)
+        df.ta.ema(length=50, append=True)
         df.ta.ema(length=200, append=True)
         df.ta.macd(fast=12, slow=26, signal=9, append=True)
         df.ta.rsi(length=14, append=True)
+        df.ta.bbands(length=20, std=2, append=True)
 
         latest = df.iloc[-1]
         
         current_price = float(latest['close'])
+        ema_50 = float(latest['EMA_50'])
         ema_200 = float(latest['EMA_200'])
         macd_line = float(latest['MACD_12_26_9'])
         signal_line = float(latest['MACDs_12_26_9'])
         rsi = float(latest['RSI_14'])
         
-        return current_price, ema_200, macd_line, signal_line, rsi
+        return current_price, ema_50, ema_200, macd_line, signal_line, rsi
     except Exception as e:
         logging.error(f"Data fetch error: {e}")
-        return None, None, None, None, None
+        return None, None, None, None, None, None
 
-def check_triple_confirmation(current_price, ema_200, macd_line, signal_line, rsi):
-    cond1 = current_price > ema_200
-    cond2 = macd_line > signal_line
-    cond3 = 50 <= rsi <= 65
-    return cond1 and cond2 and cond3
+# --- MULTIPLE HIGH-ACCURACY STRATEGIES ---
+def check_strategies(price, ema_50, ema_200, macd_line, signal_line, rsi):
+    """Inme se koi bhi ek strategy pehle match hogi toh trade mil jayegi."""
+    
+    # Strategy 1: Trend & Momentum Crossover (EMA 50 > 200 + MACD Bullish + RSI healthy)
+    strat_1 = (price > ema_50) and (ema_50 > ema_200) and (macd_line > signal_line) and (45 <= rsi <= 70)
+    
+    # Strategy 2: Strong RSI Bounce (RSI oversold se recover ho raha ho aur MACD upar ho)
+    strat_2 = (rsi < 40) and (macd_line > signal_line) and (price > ema_200)
+    
+    # Strategy 3: Quick Scalp Momentum (Fast MACD crossover with decent RSI)
+    strat_3 = (macd_line > signal_line) and (50 <= rsi <= 75) and (price > ema_50)
+
+    if strat_1:
+        return "Strategy 1 (Trend & Momentum)"
+    elif strat_2:
+        return "Strategy 2 (RSI Dip Recovery)"
+    elif strat_3:
+        return "Strategy 3 (Quick Scalp Momentum)"
+    
+    return None
 
 def manage_active_trade(current_price):
     global active_trade
@@ -67,54 +95,59 @@ def manage_active_trade(current_price):
     
     if current_price > active_trade['highest_price']:
         active_trade['highest_price'] = current_price
-        new_tsl = current_price * 0.985
+        new_tsl = current_price * 0.985  # 1.5% Trailing Stop Loss
         if new_tsl > active_trade['sl']:
             active_trade['sl'] = new_tsl
-            logging.info(f"TSL up to: {active_trade['sl']:.2f}")
+            logging.info(f"TSL updated to: {active_trade['sl']:.2f}")
 
     if current_price <= active_trade['sl']:
-        logging.info(f"SL/TSL Hit! Close at: {current_price}")
-        active_trade = None  
+        logging.info(f"SL/TSL Hit! Trade Closed at: {current_price}")
+        active_trade = None  # Lock khul gaya, ab doosri trade lee ja sakegi
     elif current_price >= target:
-        logging.info(f"Target Hit! Close at: {current_price}")
-        active_trade = None  
+        logging.info(f"Target Hit! Trade Closed at: {current_price}")
+        active_trade = None  # Lock khul gaya
 
 def run_trading_bot():
     global active_trade
-    logging.info("Live Market Bot Started...")
+    logging.info("Multi-Strategy Trading Bot Started...")
 
     while True:
         try:
-            price, ema, macd, signal, rsi = fetch_market_data()
+            price, ema_50, ema_200, macd, signal, rsi = fetch_market_data()
             if price is None:
                 time.sleep(10)
                 continue
                 
-            logging.info(f"LIVE SCAN - Price: {price:.2f} | RSI: {rsi:.2f} | 200 EMA: {ema:.2f}")
+            logging.info(f"SCAN - Price: {price:.2f} | RSI: {rsi:.2f} | Active Trade: {active_trade is not None}")
 
+            # Rule: Jab tak active trade chal rahi hai, doosri entry nahi hogi
             if active_trade is not None:
                 manage_active_trade(price)
             else:
-                if check_triple_confirmation(price, ema, macd, signal, rsi):
-                    logging.info("LIVE SIGNAL DETECTED! Placing Buy Order...")
+                matched_strategy = check_strategies(price, ema_50, ema_200, macd, signal, rsi)
+                
+                if matched_strategy:
+                    logging.info(f"SIGNAL MATCHED via {matched_strategy}! Opening Trade...")
                     
                     active_trade = {
+                        'strategy': matched_strategy,
                         'entry_price': price,
                         'quantity': ENTRY_QUANTITY,
-                        'sl': price * 0.985,
-                        'target': price * 1.03,
+                        'sl': price * 0.985,      # 1.5% Initial Stop Loss
+                        'target': price * 1.03,   # 3% Target
                         'highest_price': price
                     }
-                    logging.info(f"Trade Live: {active_trade}")
+                    logging.info(f"Trade Executed: {active_trade}")
 
             time.sleep(30)
         except Exception as e:
+            logging.error(f"Bot loop error: {e}")
             time.sleep(10)
 
 app = Flask(__name__)
 @app.route('/')
 def keep_alive():
-    return "Real API Trading Bot is Live!"
+    return "Multi-Strategy Trading Bot is Live!"
 
 if __name__ == "__main__":
     bot_thread = threading.Thread(target=run_trading_bot)
