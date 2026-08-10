@@ -32,7 +32,7 @@ def fetch_market_data():
     """Fetches LIVE data and calculates indicators."""
     try:
         # SOL/USDT ka 15-minute timeframe ka real data fetch kar rahe hain
-        bars = exchange.fetch_ohlcv('SOL/USDT', timeframe='15m', limit=250)
+        bars = exchange.fetch_ohlcv('SOLUSDT', timeframe='15m', limit=250)
         df = pd.DataFrame(bars, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
         
         # Calculate Indicators (EMA, MACD, RSI) dynamically
