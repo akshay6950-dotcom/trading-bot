@@ -41,7 +41,7 @@ def place_shark_order(symbol, side, quantity):
         
         timestamp = str(int(time.time() * 1000))
         
-        # Exact format matching Shark Exchange documentation sample
+        # Updated marginAsset to 'INR' as per official documentation sample
         params = {
             'timestamp': timestamp,
             'placeType': 'ORDER_FORM',
@@ -50,7 +50,7 @@ def place_shark_order(symbol, side, quantity):
             'symbol': symbol,
             'type': 'MARKET',
             'reduceOnly': False,
-            'marginAsset': 'USDT',
+            'marginAsset': 'INR', 
             'deviceType': 'WEB',
             'userCategory': 'EXTERNAL'
         }
