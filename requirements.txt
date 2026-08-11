@@ -1,4 +1,4 @@
-flask
-ccxt
-pandas
-pandas-ta
+pandas==2.2.2
+yfinance
+pandas_ta
+requests
