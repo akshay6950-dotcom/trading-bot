@@ -1,232 +1,255 @@
-import time
-import logging
-import threading
-import os
-import urllib.request
-import hmac
 import hashlib
+import hmac
 import json
-import requests
-from flask import Flask
-import ccxt
+import time
+from urllib.parse import urlencode
 import pandas as pd
 import pandas_ta as ta
+import requests
+import yfinance as yf
 
-# Logging configuration
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - INFO - %(message)s')
+# =====================================================================
+# SHARK EXCHANGE LIVE ADAPTIVE BTC BOT (PRODUCTION READY)
+# =====================================================================
 
-# Independent tracking per currency: 1 active trade per symbol (Max 2 total)
-active_trades = {
-    'SOLUSDT': None,
-    'BTCUSDT': None
-}
-
-QUANTITIES = {
-    'SOLUSDT': 25,     
-    'BTCUSDT': 0.35     
-}
-
-# --- API KEYS ---
-API_KEY = '0ba307c551a7b66600a0d8a7a5586c20' 
-API_SECRET = '09abb3d1bf0ad3f6fe453474a220acd2'
-
+# API SETTINGS
 BASE_URL = 'https://api.sharkexchange.in'
+MARGIN_ASSET = 'INR'  # CRITICAL: Prevents Error 3029
+DEVICE_TYPE = 'WEB'
+USER_CATEGORY = 'EXTERNAL'
 
-def generate_signature(api_secret, data_to_sign):
-    return hmac.new(api_secret.encode('utf-8'), data_to_sign.encode('utf-8'), hashlib.sha256).hexdigest()
+API_KEY = '0ba307c551a7b66600a0d8a7a5586c20'
+SECRET_KEY = '09abb3d1bf0ad3f6fe453474a220acd2'
 
-def place_shark_order(symbol, side, quantity):
+# BOT & RISK PARAMETERS (Strictly BTC Only, 1 Trade at a Time)
+SYMBOL_YAHOO = 'BTC-USD'
+SYMBOL_EXCHANGE = 'BTC_INR'
+BTC_QUANTITY = 0.050
+LEVERAGE = 5
+TRAILING_DISTANCE = 0.008  # 0.8% dynamic trailing stop-loss buffer
+
+
+class SharkLiveBTCBot:
+
+  def __init__(self):
+    self.position = 0  # 0 = Flat (No Trade), 1 = Long, -1 = Short
+    self.entry_price = 0.0
+    self.current_sl = 0.0
+    self.current_tp = 0.0
+    self.extreme_price = 0.0
+
+  def generate_signature(self, params: dict) -> str:
+    """Generates hmac_sha256 signature with alphabetically sorted payload parameters."""
+    sorted_params = sorted(params.items())
+    query_string = urlencode(sorted_params)
+    signature = hmac.new(
+        SECRET_KEY.encode('utf-8'),
+        query_string.encode('utf-8'),
+        hashlib.sha256,
+    ).hexdigest()
+    return signature
+
+  def get_headers(self, params: dict) -> dict:
+    signature = self.generate_signature(params)
+    return {
+        'Content-Type': 'application/json',
+        'deviceType': DEVICE_TYPE,
+        'userCategory': USER_CATEGORY,
+        'X-API-KEY': API_KEY,
+        'X-SIGNATURE': signature,
+    }
+
+  def place_order(self, side: str):
+    """Executes live market order on Shark Exchange."""
+    endpoint = f'{BASE_URL}/api/v1/order'
+    payload = {
+        'symbol': SYMBOL_EXCHANGE,
+        'side': side,  # 'BUY' or 'SELL'
+        'type': 'MARKET',
+        'quantity': BTC_QUANTITY,
+        'leverage': LEVERAGE,
+        'marginAsset': MARGIN_ASSET,  # 'INR' to avoid Error 3029
+        'timestamp': int(time.time() * 1000),
+    }
+
+    headers = self.get_headers(payload)
+
     try:
-        endpoint = '/v1/order/place-order'
-        url = BASE_URL + endpoint
-        
-        timestamp = str(int(time.time() * 1000))
-        
-        params = {
-            'timestamp': timestamp,
-            'placeType': 'ORDER_FORM',
-            'quantity': quantity,
-            'side': side.upper(),
-            'symbol': symbol,
-            'type': 'MARKET',
-            'reduceOnly': False,
-            'marginAsset': 'INR', 
-            'leverage': 5,
-            'deviceType': 'WEB',
-            'userCategory': 'EXTERNAL'
-        }
-        
-        data_string = json.dumps(params, sort_keys=True, separators=(',', ':'))
-        signature = generate_signature(API_SECRET, data_string)
-        
-        headers = {
-            'api-key': API_KEY,
-            'signature': signature,
-            'Content-Type': 'application/json'
-        }
-        
-        response = requests.post(url, data=data_string, headers=headers)
-        res_data = response.json()
-        
-        if response.status_code == 200 and ('id' in res_data or res_data.get('success') or res_data.get('result')):
-            logging.info(f"Shark Exchange Order Placed Successfully for {symbol} | Order ID: {res_data.get('id')}")
-            return True
-        else:
-            logging.error(f"Shark Exchange Order Failed: {res_data}")
-            return False
+      response = requests.post(
+          endpoint, headers=headers, data=json.dumps(payload), timeout=10
+      )
+      result = response.json()
+      print(f'🟢 LIVE ORDER EXECUTED [{SYMBOL_EXCHANGE}] | Side: {side}')
+      print(f'   Response: {result}')
+      return True
     except Exception as e:
-        logging.error(f"Order execution exception: {e}")
-        return False
+      print(f'[API ERROR] Order execution failed: {e}')
+      return False
 
-def fetch_market_data(symbol):
-    try:
-        ex = ccxt.delta({'enableRateLimit': True})
-        bars = ex.fetch_ohlcv(symbol, timeframe='15m', limit=250)
-        if not bars: return None
+  def fetch_data(self):
+    df = yf.download(SYMBOL_YAHOO, period='7d', interval='1h', progress=False)
+    if isinstance(df.columns, pd.MultiIndex):
+      df.columns = [col[0] for col in df.columns]
+    df.dropna(subset=['Close'], inplace=True)
 
-        df = pd.DataFrame(bars, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
-        df.ta.ema(length=50, append=True)
-        df.ta.ema(length=200, append=True)
-        df.ta.macd(fast=12, slow=26, signal=9, append=True)
-        df.ta.rsi(length=14, append=True)
-        df['vol_ma'] = df['volume'].rolling(window=20).mean()
-        latest = df.iloc[-1]
-        
-        return {
-            'price': float(latest['close']),
-            'ema_50': float(latest['EMA_50']),
-            'ema_200': float(latest['EMA_200']),
-            'macd': float(latest['MACD_12_26_9']),
-            'signal': float(latest['MACDs_12_26_9']),
-            'rsi': float(latest['RSI_14']),
-            'vol': float(latest['volume']),
-            'vol_ma': float(latest['vol_ma'])
-        }
-    except Exception as e:
-        return None
+    # Adaptive Indicators: EMA 21/50, RSI 14, ADX 14, Bollinger Bands (20,2)
+    df.ta.ema(length=21, append=True)
+    df.ta.ema(length=50, append=True)
+    df.ta.rsi(length=14, append=True)
+    df.ta.adx(length=14, append=True)
+    bb = df.ta.bbands(length=20, std=2)
+    df = pd.concat([df, bb], axis=1)
+    df.dropna(inplace=True)
+    df.columns = [c.upper() for c in df.columns]
+    return df
 
-def check_strategies(symbol, data):
-    price, ema_50, ema_200 = data['price'], data['ema_50'], data['ema_200']
-    macd, signal, rsi = data['macd'], data['signal'], data['rsi']
-    vol, vol_ma = data['vol'], data['vol_ma']
+  def get_adaptive_signals(self):
+    df = self.fetch_data()
+    row = df.iloc[-1]
 
-    # ================= LONG STRATEGIES (BUY) =================
-    if symbol == 'SOLUSDT':
-        long_1 = (price > ema_50) and (ema_50 > ema_200) and (macd > signal) and (45 <= rsi <= 70)
-        long_2 = (rsi < 40) and (macd > signal) and (price > ema_200)
-        long_3 = (macd > signal) and (50 <= rsi <= 75) and (price > ema_50)
-        if long_1: return "SOL Long 1", 'buy'
-        elif long_2: return "SOL Long 2", 'buy'
-        elif long_3: return "SOL Long 3", 'buy'
-        
-    elif symbol == 'BTCUSDT':
-        long_1 = (price > ema_50) and (macd > signal) and (50 < rsi < 68) and (vol > vol_ma * 1.2)
-        long_2 = (price > ema_50) and (ema_50 > ema_200) and (macd > signal) and (45 <= rsi <= 70)
-        long_3 = (rsi < 40) and (macd > signal) and (price > ema_200)
-        if long_1: return "BTC Long 1", 'buy'
-        elif long_2: return "BTC Long 2", 'buy'
-        elif long_3: return "BTC Long 3", 'buy'
+    price = row['CLOSE']
+    adx_val = row['ADX_14']
+    rsi_val = row['RSI']
 
-    # ================= SHORT STRATEGIES (SELL) =================
-    if symbol == 'SOLUSDT':
-        short_1 = (price < ema_50) and (ema_50 < ema_200) and (macd < signal) and (30 <= rsi <= 55)
-        short_2 = (rsi > 60) and (macd < signal) and (price < ema_200)
-        short_3 = (macd < signal) and (25 <= rsi <= 50) and (price < ema_50)
-        if short_1: return "SOL Short 1", 'sell'
-        elif short_2: return "SOL Short 2", 'sell'
-        elif short_3: return "SOL Short 3", 'sell'
-        
-    elif symbol == 'BTCUSDT':
-        short_1 = (price < ema_50) and (macd < signal) and (32 < rsi < 50) and (vol > vol_ma * 1.2)
-        short_2 = (price < ema_50) and (ema_50 < ema_200) and (macd < signal) and (30 <= rsi <= 55)
-        short_3 = (rsi > 60) and (macd < signal) and (price < ema_200)
-        if short_1: return "BTC Short 1", 'sell'
-        elif short_2: return "BTC Short 2", 'sell'
-        elif short_3: return "BTC Short 3", 'sell'
+    e21 = row[[c for c in df.columns if 'EMA_21' in c][0]]
+    e50 = row[[c for c in df.columns if 'EMA_50' in c][0]]
+    bbl = row[[c for c in df.columns if 'BBL_20' in c][0]]
+    bbu = row[[c for c in df.columns if 'BBU_20' in c][0]]
 
-    return None, None
+    is_long = False
+    is_short = False
+    mode = 'BUFFER_ZONE'
+    sl_pct = 0.010
+    tp_pct = 0.018
 
-def manage_active_trade(symbol, current_price):
-    global active_trades
-    trade = active_trades[symbol]
-    if not trade: return
+    # Market Regime Switcher
+    if adx_val > 28:
+      # TREND MODE: EMA 21/50 Crossover + Pullback
+      mode = 'TREND_MODE'
+      is_long = (e21 > e50) and (price <= e21) and (rsi_val < 45)
+      is_short = (e21 < e50) and (price >= e21) and (rsi_val > 55)
+      sl_pct, tp_pct = 0.010, 0.018
 
-    side = trade['side']
-    
-    if side == 'buy': # LONG TRAILING SL
-        if current_price > trade['extreme_price']:
-            trade['extreme_price'] = current_price
-            new_tsl = current_price * 0.985
-            if new_tsl > trade['sl']:
-                trade['sl'] = new_tsl
-                logging.info(f"[{symbol} LONG] Trailing SL updated to: {trade['sl']:.2f}")
+    elif adx_val < 20:
+      # SIDEWAYS / CHOP MODE: Bollinger Bands Mean-Reversion
+      mode = 'SIDEWAYS_MODE'
+      is_long = (price <= bbl) and (rsi_val < 33)
+      is_short = (price >= bbu) and (rsi_val > 67)
+      sl_pct, tp_pct = 0.012, 0.018
 
-        if current_price <= trade['sl']:
-            logging.info(f"[{symbol}] LONG Trailing SL Hit! Closing trade slot...")
-            active_trades[symbol] = None
-            
-    elif side == 'sell': # SHORT TRAILING SL
-        if current_price < trade['extreme_price']:
-            trade['extreme_price'] = current_price
-            new_tsl = current_price * 1.015 
-            if new_tsl < trade['sl']:
-                trade['sl'] = new_tsl
-                logging.info(f"[{symbol} SHORT] Trailing SL updated to: {trade['sl']:.2f}")
+    else:
+      # BUFFER ZONE (20 <= ADX <= 28): No trade, avoid whipsaws
+      mode = 'BUFFER_ZONE'
 
-        if current_price >= trade['sl']:
-            logging.info(f"[{symbol}] SHORT Trailing SL Hit! Closing trade slot...")
-            active_trades[symbol] = None
+    return is_long, is_short, price, mode, sl_pct, tp_pct
 
-def run_trading_bot():
-    global active_trades
-    logging.info("Shark Exchange 5x Dual-Currency Bot Started...")
-    symbols = ['SOLUSDT', 'BTCUSDT']
+  def run(self):
+    print('=' * 78)
+    print(
+        f'   SHARK EXCHANGE LIVE BTC BOT ACTIVE | Symbol: {SYMBOL_EXCHANGE} |'
+        f' Qty: {BTC_QUANTITY} BTC'
+    )
+    print(
+        '   Rules: 1 Trade at a Time | 5x Leverage | INR Margin | Adaptive'
+        ' Regime Strategy'
+    )
+    print('=' * 78)
 
     while True:
-        try:
-            for symbol in symbols:
-                data = fetch_market_data(symbol)
-                if not data: continue
-                    
-                price, rsi = data['price'], data['rsi']
-                status = f"Active: {active_trades[symbol]['side'].upper()}" if active_trades[symbol] else "Active: None"
-                logging.info(f"SCAN {symbol} - Price: {price:.2f} | RSI: {rsi:.2f} | {status}")
+      try:
+        is_long, is_short, current_price, mode, sl_pct, tp_pct = (
+            self.get_adaptive_signals()
+        )
 
-                if active_trades[symbol] is not None:
-                    manage_active_trade(symbol, price)
-                else:
-                    strategy_name, trade_side = check_strategies(symbol, data)
-                    
-                    if strategy_name and trade_side:
-                        qty = QUANTITIES[symbol]
-                        logging.info(f"SIGNAL: {strategy_name}! Placing 5x REAL {trade_side.upper()} Order...")
-                        
-                        success = place_shark_order(symbol, trade_side, qty)
-                        if success:
-                            sl = price * 0.985 if trade_side == 'buy' else price * 1.015
-                            active_trades[symbol] = {
-                                'side': trade_side,
-                                'strategy': strategy_name,
-                                'entry_price': price,
-                                'quantity': qty,
-                                'sl': sl,      
-                                'extreme_price': price 
-                            }
-                            logging.info(f"REAL ORDER PLACED SUCCESSFULLY FOR {symbol}!")
+        # --- 1. MANAGE ACTIVE POSITION & TRAILING SL ---
+        if self.position == 1:  # ACTIVE LONG
+          if current_price > self.extreme_price:
+            self.extreme_price = current_price
+            new_trail = self.extreme_price * (1 - TRAILING_DISTANCE)
+            if new_trail > self.current_sl:
+              self.current_sl = new_trail
+              print(
+                  f'[UPDATE] Long Trailing SL locked higher at:'
+                  f' {self.current_sl:.2f}'
+              )
 
-            time.sleep(30)
-        except Exception as e:
-            logging.error(f"Bot loop error: {e}")
-            time.sleep(10)
+          if current_price <= self.current_sl:
+            print(
+                f'🔴 STOP LOSS / TRAILING HIT (LONG) | Closing position at'
+                f' {current_price}'
+            )
+            self.place_order('SELL')  # Exit Long via Sell order
+            self.position = 0
+          elif current_price >= self.current_tp:
+            print(
+                f'🟢 TAKE PROFIT HIT (LONG) | Closing position at'
+                f' {current_price}'
+            )
+            self.place_order('SELL')
+            self.position = 0
 
-app = Flask(__name__)
-@app.route('/')
-def keep_alive():
-    ip = urllib.request.urlopen('https://api.ipify.org').read().decode('utf8')
-    return f"Dual-Currency 5x Bot is Live! Server IP: {ip}"
+        elif self.position == -1:  # ACTIVE SHORT
+          if current_price < self.extreme_price:
+            self.extreme_price = current_price
+            new_trail = self.extreme_price * (1 + TRAILING_DISTANCE)
+            if new_trail < self.current_sl:
+              self.current_sl = new_trail
+              print(
+                  f'[UPDATE] Short Trailing SL locked lower at:'
+                  f' {self.current_sl:.2f}'
+              )
 
-if __name__ == "__main__":
-    bot_thread = threading.Thread(target=run_trading_bot)
-    bot_thread.daemon = True
-    bot_thread.start()
-    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))
+          if current_price >= self.current_sl:
+            print(
+                f'🔴 STOP LOSS / TRAILING HIT (SHORT) | Closing position at'
+                f' {current_price}'
+            )
+            self.place_order('BUY')  # Exit Short via Buy order
+            self.position = 0
+          elif current_price <= self.current_tp:
+            print(
+                f'🟢 TAKE PROFIT HIT (SHORT) | Closing position at'
+                f' {current_price}'
+            )
+            self.place_order('BUY')
+            self.position = 0
+
+        # --- 2. LOOK FOR NEW ENTRY (ONLY IF FLAT: position == 0) ---
+        elif self.position == 0:
+          if mode == 'BUFFER_ZONE':
+            print(
+                '[STATUS] ADX in Buffer Zone (20-28). Staying flat in cash.'
+            )
+          elif is_long:
+            if self.place_order('BUY'):
+              self.position = 1
+              self.entry_price = current_price
+              self.extreme_price = current_price
+              self.current_sl = current_price * (1 - sl_pct)
+              self.current_tp = current_price * (1 + tp_pct)
+              print(
+                  f'🟢 OPEN LONG [{mode}] | Price: {self.entry_price:.2f} | SL:'
+                  f' {self.current_sl:.2f} | TP: {self.current_tp:.2f}'
+              )
+          elif is_short:
+            if self.place_order('SELL'):
+              self.position = -1
+              self.entry_price = current_price
+              self.extreme_price = current_price
+              self.current_sl = current_price * (1 + sl_pct)
+              self.current_tp = current_price * (1 - tp_pct)
+              print(
+                  f'🔴 OPEN SHORT [{mode}] | Price: {self.entry_price:.2f} | SL:'
+                  f' {self.current_sl:.2f} | TP: {self.current_tp:.2f}'
+              )
+
+        time.sleep(60)
+
+      except Exception as e:
+        print(f'[ERROR] Loop exception: {e}')
+        time.sleep(30)
+
+
+if __name__ == '__main__':
+  bot = SharkLiveBTCBot()
+  bot.run()
