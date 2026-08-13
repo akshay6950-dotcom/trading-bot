@@ -5,7 +5,6 @@ import os
 import threading
 import time
 import traceback
-from urllib.parse import urlencode
 from flask import Flask
 import pandas as pd
 import pandas_ta as ta
@@ -19,8 +18,8 @@ app = Flask(__name__)
 # ==========================================
 BASE_URL = 'https://api.sharkexchange.in'
 
-# 👇 AGAR SHARK EXCHANGE KA ORDER LINK KUCH AUR HAI TOH YAHAN BADAL DENA (e.g., '/api/v1/orders')
-ORDER_ENDPOINT_PATH = '/api/v1/order' 
+# SHARK EXCHANGE OFFICIAL ENDPOINT (From Screenshot)
+ORDER_ENDPOINT_PATH = '/api/v1/order/place-order' 
 
 MARGIN_ASSET = 'INR'
 DEVICE_TYPE = 'WEB'
@@ -42,36 +41,49 @@ class SharkLiveBTCBot:
         self.current_tp = 0.0
         self.extreme_price = 0.0
 
-    def generate_signature(self, params: dict) -> str:
-        sorted_params = sorted(params.items())
-        query_string = urlencode(sorted_params)
-        return hmac.new(SECRET_KEY.encode('utf-8'), query_string.encode('utf-8'), hashlib.sha256).hexdigest()
-
-    def get_headers(self, params: dict) -> dict:
-        return {
-            'Content-Type': 'application/json', 
-            'deviceType': DEVICE_TYPE, 
-            'userCategory': USER_CATEGORY, 
-            'X-API-KEY': API_KEY, 
-            'X-SIGNATURE': self.generate_signature(params)
-        }
+    def generate_signature(self, data_to_sign: str) -> str:
+        # Docs ke hisaab se JSON string ko hash karna hai
+        return hmac.new(
+            SECRET_KEY.encode('utf-8'), 
+            data_to_sign.encode('utf-8'), 
+            hashlib.sha256
+        ).hexdigest()
 
     def place_order(self, side: str):
         endpoint = f'{BASE_URL}{ORDER_ENDPOINT_PATH}'
+        
+        # Payload ekdam official docs ke table ke hisaab se
         payload = {
-            'symbol': SYMBOL_EXCHANGE, 
-            'side': side, 
-            'type': 'MARKET', 
-            'quantity': BTC_QUANTITY, 
-            'leverage': LEVERAGE, 
-            'marginAsset': MARGIN_ASSET, 
-            'timestamp': int(time.time() * 1000)
+            'timestamp': int(time.time() * 1000),
+            'placeType': 'ORDER_FORM',
+            'quantity': BTC_QUANTITY,
+            'side': side,
+            'symbol': SYMBOL_EXCHANGE,
+            'type': 'MARKET',
+            'orderType': 'MARKET',
+            'reduceOnly': False,
+            'marginAsset': MARGIN_ASSET,
+            'deviceType': DEVICE_TYPE,
+            'userCategory': USER_CATEGORY,
+            'leverage': LEVERAGE
         }
+        
         try:
-            response = requests.post(endpoint, headers=self.get_headers(payload), data=json.dumps(payload), timeout=15)
+            # Docs ke right-side python snippet ke hisaab se string banana
+            data_to_sign = json.dumps(payload, separators=(',', ':'))
+            signature = self.generate_signature(data_to_sign)
+            
+            # Naye official headers
+            headers = {
+                'Content-Type': 'application/json', 
+                'api-key': API_KEY, 
+                'signature': signature
+            }
+            
+            # Send exactly the signed JSON string
+            response = requests.post(endpoint, headers=headers, data=data_to_sign, timeout=15)
             print(f'🟢 ORDER STATUS [{side}]: {response.status_code} | {response.text}', flush=True)
             
-            # Agar order successful ho (200 OK), tabhi position update hogi
             if response.status_code == 200:
                 return True
             return False
