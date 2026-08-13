@@ -14,8 +14,14 @@ import yfinance as yf
 
 app = Flask(__name__)
 
-# CONFIG
+# ==========================================
+# CONFIGURATION
+# ==========================================
 BASE_URL = 'https://api.sharkexchange.in'
+
+# 👇 AGAR SHARK EXCHANGE KA ORDER LINK KUCH AUR HAI TOH YAHAN BADAL DENA (e.g., '/api/v1/orders')
+ORDER_ENDPOINT_PATH = '/api/v1/order' 
+
 MARGIN_ASSET = 'INR'
 DEVICE_TYPE = 'WEB'
 USER_CATEGORY = 'EXTERNAL'
@@ -51,7 +57,7 @@ class SharkLiveBTCBot:
         }
 
     def place_order(self, side: str):
-        endpoint = f'{BASE_URL}/api/v1/order'
+        endpoint = f'{BASE_URL}{ORDER_ENDPOINT_PATH}'
         payload = {
             'symbol': SYMBOL_EXCHANGE, 
             'side': side, 
@@ -64,7 +70,11 @@ class SharkLiveBTCBot:
         try:
             response = requests.post(endpoint, headers=self.get_headers(payload), data=json.dumps(payload), timeout=15)
             print(f'🟢 ORDER STATUS [{side}]: {response.status_code} | {response.text}', flush=True)
-            return True
+            
+            # Agar order successful ho (200 OK), tabhi position update hogi
+            if response.status_code == 200:
+                return True
+            return False
         except Exception:
             print(f'❌ API ERROR DETAILED:', flush=True)
             traceback.print_exc()
@@ -72,6 +82,10 @@ class SharkLiveBTCBot:
 
     def fetch_data(self):
         df = yf.download(SYMBOL_YAHOO, period='5d', interval='1h', progress=False)
+        
+        if df.empty:
+            raise ValueError("Yahoo Finance se data nahi mila, agle minute retry karega.")
+            
         if isinstance(df.columns, pd.MultiIndex): 
             df.columns = [col[0] for col in df.columns]
         
@@ -85,9 +99,12 @@ class SharkLiveBTCBot:
 
     def get_adaptive_signals(self):
         df = self.fetch_data()
+        
+        if df.empty:
+             raise ValueError("Dataframe khali hai indicators ke baad.")
+             
         row = df.iloc[-1]
         
-        # FIXED: Changed 'RSI' to 'RSI_14'
         price, adx_val, rsi_val = row['CLOSE'], row['ADX_14'], row['RSI_14']
         
         e21 = row[[c for c in df.columns if 'EMA_21' in c][0]]
@@ -118,9 +135,8 @@ class SharkLiveBTCBot:
                             self.position = -1
                 
                 time.sleep(60)
-            except Exception:
-                print(f'⚠️ CRITICAL LOOP ERROR DETAILED:', flush=True)
-                traceback.print_exc()
+            except Exception as e:
+                print(f'⚠️ TEMPORARY LOOP ERROR: {e}', flush=True)
                 time.sleep(30)
 
 @app.route('/')
