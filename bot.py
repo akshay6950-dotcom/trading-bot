@@ -20,7 +20,7 @@ app = Flask(__name__)
 BASE_URL = 'https://api.sharkexchange.in'
 
 ORDER_ENDPOINT_PATH = '/v1/order/place-order' 
-POSITION_ENDPOINT_PATH = '/v1/positions' # Trade monitor karne ka rasta
+POSITION_ENDPOINT_PATH = '/v1/positions' 
 
 MY_RENDER_URL = 'https://trading-bot-4axq.onrender.com'
 
@@ -39,7 +39,7 @@ LEVERAGE = 5
 
 class SharkLiveBTCBot:
     def __init__(self):
-        self.position = 0 # 0 = No Trade, 1 = Long, -1 = Short
+        self.position = 0 
         self.entry_price = 0.0
 
     def generate_signature(self, data_to_sign: str) -> str:
@@ -52,6 +52,7 @@ class SharkLiveBTCBot:
     def place_order(self, side: str):
         endpoint = f'{BASE_URL}{ORDER_ENDPOINT_PATH}'
         
+        # 🟢 FIX: orderType yahan se hata diya gaya hai API strictness ke karan 🟢
         payload = {
             'timestamp': int(time.time() * 1000),
             'placeType': 'ORDER_FORM',
@@ -59,7 +60,6 @@ class SharkLiveBTCBot:
             'side': side,
             'symbol': SYMBOL_EXCHANGE,
             'type': 'MARKET',
-            'orderType': 'MARKET',
             'reduceOnly': False,
             'marginAsset': MARGIN_ASSET,
             'deviceType': DEVICE_TYPE,
@@ -80,7 +80,6 @@ class SharkLiveBTCBot:
             response = requests.post(endpoint, headers=headers, data=data_to_sign, timeout=15)
             print(f'🟢 ORDER STATUS [{side}]: {response.status_code} | {response.text}', flush=True)
             
-            # Agar order sach mein successfully lag gaya, tabhi True return karega
             if response.status_code == 200:
                 return True
             return False
@@ -90,7 +89,6 @@ class SharkLiveBTCBot:
             return False
 
     def check_if_trade_closed(self):
-        """Yeh function exchange se check karta hai ki trade abhi bhi open hai ya profit book ho gaya."""
         endpoint = f'{BASE_URL}{POSITION_ENDPOINT_PATH}'
         payload = {'timestamp': int(time.time() * 1000)}
         
@@ -106,18 +104,16 @@ class SharkLiveBTCBot:
             response = requests.get(f"{endpoint}?{query_string}", headers=headers, timeout=10)
             
             if response.status_code == 200:
-                # Agar BTC_INR ka zikr response mein nahi hai, matlab trade close ho chuki hai
                 if SYMBOL_EXCHANGE not in response.text:
-                    return True # Trade is Closed (Profit/SL Hit)
-                return False # Trade is still Open
+                    return True 
+                return False 
                 
-            return False # Agar exchange API down ho, toh safe side position open maan lo
+            return False 
         except Exception as e:
             print(f'⚠️ STATUS CHECK ERROR: {e}', flush=True)
             return False
 
     def fetch_data(self):
-        # 1-HOUR TIMEFRAME Data Fetch
         df = yf.download(SYMBOL_YAHOO, period='5d', interval='1h', progress=False)
         
         if df.empty:
@@ -148,7 +144,6 @@ class SharkLiveBTCBot:
         
         mode = 'TREND' if adx_val > 25 else 'SIDEWAYS'
         
-        # 🟢 STRICT RSI 30/70 LOGIC (Sideways Market Ke Liye) 🟢
         is_long = (e21 > e50) and (price <= e21) if mode == 'TREND' else (rsi_val < 30)
         is_short = (e21 < e50) and (price >= e21) if mode == 'TREND' else (rsi_val > 70)
         
@@ -158,16 +153,14 @@ class SharkLiveBTCBot:
         print('🚀 SMART MONITORING BOT STARTED | 1H CHART | QTY: 0.025 | RSI: 30/70...', flush=True)
         while True:
             try:
-                # 🛑 SAFETY CHECK: Agar pehle se koi trade chal rahi hai 🛑
                 if self.position != 0:
                     print("🔒 TRADE ALREADY OPEN: Target ya SL hit hone ka wait kar raha hu...", flush=True)
                     if self.check_if_trade_closed():
                         print("✅ OLD TRADE BOOKED/CLOSED! Naye trade ke liye reset ho gaya.", flush=True)
-                        self.position = 0 # Lock khol do
+                        self.position = 0 
                     else:
                         print("⏳ STILL OPEN: Exchange par abhi bhi trade active hai. Waiting...", flush=True)
                 
-                # 🟢 ENTRY LOGIC: Agar koi trade open nahi hai, toh hi market scan karega 🟢
                 else:
                     is_long, is_short, price, mode, rsi = self.get_adaptive_signals()
                     print(f'📡 SCANNING | Price: {price:.2f} | RSI: {rsi:.2f} | Mode: {mode} | Pos: {self.position}', flush=True)
@@ -175,23 +168,20 @@ class SharkLiveBTCBot:
                     if is_long:
                         print("📈 SIGNAL: BUY (Oversold / Trend Support)", flush=True)
                         if self.place_order('BUY'): 
-                            self.position = 1 # Trade lagte hi lock kar do
+                            self.position = 1 
                             print("🔒 TRADE LOCKED: Ab profit book hone tak nayi trade nahi hogi.", flush=True)
                     elif is_short:
                         print("📉 SIGNAL: SELL (Overbought / Trend Resistance)", flush=True)
                         if self.place_order('SELL'): 
-                            self.position = -1 # Trade lagte hi lock kar do
+                            self.position = -1 
                             print("🔒 TRADE LOCKED: Ab profit book hone tak nayi trade nahi hogi.", flush=True)
                 
-                time.sleep(60) # Har 1 minute mein exchange se cross-verify karega
+                time.sleep(60) 
             except Exception as e:
                 print(f'⚠️ TEMPORARY LOOP ERROR: {e}', flush=True)
                 time.sleep(30)
 
 
-# ==========================================
-# ANTI-SLEEP PINGER (BOT KO JAGAYE RAKHNE KE LIYE)
-# ==========================================
 def keep_alive_ping():
     while True:
         time.sleep(600) 
