@@ -33,6 +33,7 @@ SECRET_KEY = '09abb3d1bf0ad3f6fe453474a220acd2'
 SYMBOL_YAHOO = 'BTC-USD'
 SYMBOL_EXCHANGE = 'BTC_INR'
 
+# 👇 SETTINGS 👇
 BTC_QUANTITY = 0.025  
 LEVERAGE = 5
 
@@ -86,7 +87,6 @@ class SharkLiveBTCBot:
             return False
 
     def is_trade_active_on_exchange(self):
-        """Ab yeh function sirf naam nahi, balki quantity > 0 check karega!"""
         endpoint = f'{BASE_URL}{POSITION_ENDPOINT_PATH}'
         payload = {'timestamp': int(time.time() * 1000)}
         
@@ -102,51 +102,21 @@ class SharkLiveBTCBot:
             response = requests.get(f"{endpoint}?{query_string}", headers=headers, timeout=10)
             
             if response.status_code == 200:
-                data_str = response.text
-                
-                # NAYA FEATURE: Exchange exactly kya bhej raha hai, usko Render par print karo
-                print(f"🔍 EXCHANGE RAW REPLY: {data_str}", flush=True)
-                
-                # Agar list/dict khali hai
-                if data_str.strip() in ["[]", "{}"]:
-                    return False
-                
-                try:
-                    data = response.json()
-                    
-                    # Agar exchange ne dictionary bheji hai (eg: {"data": [...]})
-                    if isinstance(data, dict):
-                        for key in data.values():
-                            if isinstance(key, list):
-                                data = key
-                                break
-                    
-                    # Agar list of positions hai, toh check karo quantity zero toh nahi!
-                    if isinstance(data, list):
-                        for pos in data:
-                            symbol = str(pos.get('symbol', '')).upper()
-                            # Alag-alag APIs alag naam use karti hain quantity ke liye
-                            raw_qty = pos.get('positionQty', pos.get('quantity', pos.get('size', pos.get('positionAmt', 0))))
-                            qty = float(raw_qty) if raw_qty else 0.0
-                            
-                            # Agar BTC_INR hai AUR quantity zero se zyada hai, tabhi trade open manenge
-                            if SYMBOL_EXCHANGE in symbol and abs(qty) > 0:
-                                return True
-                                
-                        return False # BTC_INR ka naam tha par quantity 0 thi
-                except Exception as parse_e:
-                    print(f"⚠️ JSON PARSE ERROR: {parse_e}", flush=True)
-
-                # Agar upar ka JSON logic fail ho jaye, toh simple check lagao
-                if SYMBOL_EXCHANGE in data_str and '"0"' not in data_str and '"0.0"' not in data_str:
-                    return True
+                if SYMBOL_EXCHANGE in response.text:
+                    return True 
                 return False 
+                
+            # 🟢 FIX: Agar exchange 400 error (Invalid Position ID) de, toh uska matlab seedha 0 open trades hai. Isko silently handle karo.
+            elif response.status_code == 400 and "positionId" in response.text:
+                return False 
+                
             else:
+                # Baki koi random error aaye toh print karo
                 print(f'⚠️ API CALL FAILED [{response.status_code}]: {response.text}', flush=True)
-                return False # API fail hone par hamesha ke liye lock mat ho
+                return True # Safe side lock
         except Exception as e:
             print(f'⚠️ STATUS CHECK ERROR: {e}', flush=True)
-            return False
+            return True # Safe side lock
 
     def fetch_data(self):
         df = yf.download(SYMBOL_YAHOO, period='5d', interval='1h', progress=False)
@@ -188,10 +158,8 @@ class SharkLiveBTCBot:
         print('🚀 SMART MONITORING BOT STARTED | 1H CHART | QTY: 0.025...', flush=True)
         while True:
             try:
-                # STEP 1: Exchange se live pucho (Quantity check ke saath)
                 trade_is_open = self.is_trade_active_on_exchange()
                 
-                # STEP 2: Logic Check
                 if trade_is_open:
                     print("🔒 EXCHANGE STATUS: Purani trade open hai. Naya trade LOCKED hai till close.", flush=True)
                 else:
@@ -225,7 +193,7 @@ def keep_alive_ping():
 
 @app.route('/')
 def home(): 
-    return 'Bot is syncing LIVE with Exchange (Checking Exact Quantities!). Fully automated!'
+    return 'Bot is syncing LIVE with Exchange. Fully safe and automated!'
 
 if __name__ == '__main__':
     threading.Thread(target=lambda: SharkLiveBTCBot().run(), daemon=True).start()
