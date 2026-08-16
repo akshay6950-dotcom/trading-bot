@@ -18,7 +18,6 @@ app = Flask(__name__)
 # CONFIGURATION & SETTINGS
 # ==========================================
 BASE_URL = 'https://api.sharkexchange.in'
-
 ORDER_ENDPOINT_PATH = '/v1/order/place-order' 
 POSITION_ENDPOINT_PATH = '/v1/positions' 
 
@@ -33,17 +32,20 @@ SECRET_KEY = '09abb3d1bf0ad3f6fe453474a220acd2'
 SYMBOL_YAHOO = 'BTC-USD'
 SYMBOL_EXCHANGE = 'BTC_INR'
 
-# 👇 FIX SETTINGS (AUTO-EXIT KE LIYE) 👇
-BTC_QUANTITY = 0.025  
+# 👇 THE 58% WIN RATE SETTINGS 👇
+BTC_QUANTITY = 0.100  
 LEVERAGE = 5
 
-# Set Your Target & SL Here (In Percent)
-TAKE_PROFIT_PCT = 1.5  # 1.5% Profit
-STOP_LOSS_PCT = 1.0    # 1.0% Loss
+TAKE_PROFIT_PCT = 1.8      # 1.8% Target
+INITIAL_SL_PCT = 1.2       # 1.2% Base SL
+TRAILING_DIST_PCT = 0.8    # 0.8% Trailing
 
 class SharkLiveBTCBot:
     def __init__(self):
-        pass
+        # Local state to track Trailing SL
+        self.extreme_price = 0.0
+        self.current_sl = 0.0
+        self.current_tp = 0.0
 
     def generate_signature(self, data_to_sign: str) -> str:
         return hmac.new(
@@ -54,7 +56,6 @@ class SharkLiveBTCBot:
 
     def place_order(self, side: str, reduce_only: bool = False):
         endpoint = f'{BASE_URL}{ORDER_ENDPOINT_PATH}'
-        
         payload = {
             'timestamp': int(time.time() * 1000),
             'placeType': 'ORDER_FORM',
@@ -68,20 +69,12 @@ class SharkLiveBTCBot:
             'userCategory': USER_CATEGORY,
             'leverage': LEVERAGE
         }
-        
         try:
             data_to_sign = json.dumps(payload, separators=(',', ':'))
             signature = self.generate_signature(data_to_sign)
-            
-            headers = {
-                'Content-Type': 'application/json', 
-                'api-key': API_KEY, 
-                'signature': signature
-            }
-            
+            headers = {'Content-Type': 'application/json', 'api-key': API_KEY, 'signature': signature}
             response = requests.post(endpoint, headers=headers, data=data_to_sign, timeout=15)
             print(f'🟢 ORDER STATUS [{side}]: {response.status_code} | {response.text}', flush=True)
-            
             if response.status_code == 200:
                 return True
             return False
@@ -91,22 +84,18 @@ class SharkLiveBTCBot:
             return False
 
     def get_open_position_details(self):
-        """Exchange se pucho ki kya trade open hai, kis side hai, aur Entry Price kya tha!"""
         endpoint = f'{BASE_URL}{POSITION_ENDPOINT_PATH}'
         payload = {'timestamp': int(time.time() * 1000)}
-        
         try:
             query_string = urlencode(payload)
             signature = self.generate_signature(query_string)
             headers = {'api-key': API_KEY, 'signature': signature}
-            
             response = requests.get(f"{endpoint}?{query_string}", headers=headers, timeout=10)
             
             if response.status_code == 200:
                 data_str = response.text
                 if data_str.strip() in ["[]", "{}"]:
                     return False, None, 0.0
-                
                 try:
                     data = response.json()
                     if isinstance(data, dict):
@@ -114,37 +103,27 @@ class SharkLiveBTCBot:
                             if isinstance(key, list):
                                 data = key
                                 break
-                    
                     if isinstance(data, list):
                         for pos in data:
                             symbol = str(pos.get('symbol', '')).upper()
                             raw_qty = pos.get('positionQty', pos.get('quantity', pos.get('size', pos.get('positionAmt', 0))))
                             qty = float(raw_qty) if raw_qty else 0.0
-                            
-                            # Entry price aur side nikalo
                             raw_price = pos.get('entryPrice', pos.get('avgPrice', pos.get('positionPrice', 0)))
                             entry_price = float(raw_price) if raw_price else 0.0
-                            
-                            # Side detect karo (Long = Positive Qty, Short = Negative Qty)
                             side = 'LONG' if qty > 0 else 'SHORT'
                             
                             if SYMBOL_EXCHANGE in symbol and abs(qty) > 0:
                                 return True, side, entry_price
-                                
-                        return False, None, 0.0
                 except Exception:
                     pass
                 return False, None, 0.0
-            
             elif response.status_code == 400 and "positionId" in response.text:
                 return False, None, 0.0
-            else:
-                return False, None, 0.0
-        except Exception as e:
+            return False, None, 0.0
+        except Exception:
             return False, None, 0.0
 
     def get_live_price_1m(self):
-        """Live market price nikalne ke liye 1-minute ka chart use karega taaki SL/TP jaldi trigger ho!"""
         try:
             df = yf.download(SYMBOL_YAHOO, period='1d', interval='1m', progress=False)
             if not df.empty:
@@ -182,59 +161,79 @@ class SharkLiveBTCBot:
         return is_long, is_short, price, mode, rsi_val
 
     def run(self):
-        print('🚀 100% AUTOMATED BOT (ENTRY & AUTO-EXIT SL/TP) STARTED...', flush=True)
+        print('🚀 100% AUTOMATED BOT (TRAILING SL / TARGET 1.8%) STARTED...', flush=True)
         while True:
             try:
-                # STEP 1: Exchange se check karo trade open hai ya nahi
                 is_open, pos_side, entry_price = self.get_open_position_details()
                 
-                # STEP 2: AUTO EXIT LOGIC (Agar trade open hai)
+                # --- AUTO-EXIT LOGIC WITH TRAILING SL ---
                 if is_open and entry_price > 0:
                     live_price = self.get_live_price_1m()
                     if live_price > 0:
-                        print(f"🔒 TRADE OPEN [{pos_side}] | Entry: {entry_price:.2f} | Current: {live_price:.2f} | Target: {TAKE_PROFIT_PCT}% | SL: {STOP_LOSS_PCT}%", flush=True)
                         
                         if pos_side == 'LONG':
-                            tp_price = entry_price * (1 + (TAKE_PROFIT_PCT / 100))
-                            sl_price = entry_price * (1 - (STOP_LOSS_PCT / 100))
+                            # Initialization
+                            if self.current_tp == 0.0: self.current_tp = entry_price * (1 + (TAKE_PROFIT_PCT / 100))
+                            if self.current_sl == 0.0: self.current_sl = entry_price * (1 - (INITIAL_SL_PCT / 100))
+                            if self.extreme_price == 0.0: self.extreme_price = entry_price
                             
-                            if live_price >= tp_price:
+                            # Trailing Logic
+                            if live_price > self.extreme_price:
+                                self.extreme_price = live_price
+                                new_sl = self.extreme_price * (1 - (TRAILING_DIST_PCT / 100))
+                                if new_sl > self.current_sl: 
+                                    self.current_sl = new_sl
+                                    
+                            print(f"🔒 OPEN [LONG] | Entry: {entry_price:.2f} | Live: {live_price:.2f} | TP: {self.current_tp:.2f} | Trail-SL: {self.current_sl:.2f}", flush=True)
+
+                            if live_price >= self.current_tp:
                                 print("✅ TARGET HIT! Booking Profit Now...", flush=True)
-                                self.place_order('SELL', reduce_only=True)
-                            elif live_price <= sl_price:
-                                print("🛑 STOP LOSS HIT! Cutting Loss to save capital...", flush=True)
-                                self.place_order('SELL', reduce_only=True)
-                                
+                                if self.place_order('SELL', reduce_only=True): self.current_tp, self.current_sl, self.extreme_price = 0.0, 0.0, 0.0
+                            elif live_price <= self.current_sl:
+                                print("🛑 TRAILING STOP LOSS HIT! Trade Closed...", flush=True)
+                                if self.place_order('SELL', reduce_only=True): self.current_tp, self.current_sl, self.extreme_price = 0.0, 0.0, 0.0
+
                         elif pos_side == 'SHORT':
-                            tp_price = entry_price * (1 - (TAKE_PROFIT_PCT / 100))
-                            sl_price = entry_price * (1 + (STOP_LOSS_PCT / 100))
+                            # Initialization
+                            if self.current_tp == 0.0: self.current_tp = entry_price * (1 - (TAKE_PROFIT_PCT / 100))
+                            if self.current_sl == 0.0: self.current_sl = entry_price * (1 + (INITIAL_SL_PCT / 100))
+                            if self.extreme_price == 0.0: self.extreme_price = entry_price
                             
-                            if live_price <= tp_price:
+                            # Trailing Logic
+                            if live_price < self.extreme_price:
+                                self.extreme_price = live_price
+                                new_sl = self.extreme_price * (1 + (TRAILING_DIST_PCT / 100))
+                                if new_sl < self.current_sl: 
+                                    self.current_sl = new_sl
+                                    
+                            print(f"🔒 OPEN [SHORT] | Entry: {entry_price:.2f} | Live: {live_price:.2f} | TP: {self.current_tp:.2f} | Trail-SL: {self.current_sl:.2f}", flush=True)
+
+                            if live_price <= self.current_tp:
                                 print("✅ TARGET HIT! Booking Profit Now...", flush=True)
-                                self.place_order('BUY', reduce_only=True)
-                            elif live_price >= sl_price:
-                                print("🛑 STOP LOSS HIT! Cutting Loss to save capital...", flush=True)
-                                self.place_order('BUY', reduce_only=True)
-                
-                # STEP 3: ENTRY LOGIC (Agar trade khali hai)
+                                if self.place_order('BUY', reduce_only=True): self.current_tp, self.current_sl, self.extreme_price = 0.0, 0.0, 0.0
+                            elif live_price >= self.current_sl:
+                                print("🛑 TRAILING STOP LOSS HIT! Trade Closed...", flush=True)
+                                if self.place_order('BUY', reduce_only=True): self.current_tp, self.current_sl, self.extreme_price = 0.0, 0.0, 0.0
+
+                # --- ENTRY LOGIC ---
                 elif not is_open:
+                    # Reset trailing variables completely safe
+                    self.extreme_price, self.current_sl, self.current_tp = 0.0, 0.0, 0.0
+                    
                     is_long, is_short, price, mode, rsi = self.get_adaptive_signals()
                     print(f'📡 CLEAR TO SCAN | Price: {price:.2f} | RSI: {rsi:.2f} | Mode: {mode}', flush=True)
                     
                     if is_long:
                         print("📈 SIGNAL: BUY (Oversold / Trend Support)", flush=True)
-                        if self.place_order('BUY'): 
-                            print("🔒 BUY ORDER PLACED! Auto-Exit Monitoring Active.", flush=True)
+                        if self.place_order('BUY'): print("🔒 BUY ORDER PLACED! Trailing SL Active.", flush=True)
                     elif is_short:
                         print("📉 SIGNAL: SELL (Overbought / Trend Resistance)", flush=True)
-                        if self.place_order('SELL'): 
-                            print("🔒 SELL ORDER PLACED! Auto-Exit Monitoring Active.", flush=True)
+                        if self.place_order('SELL'): print("🔒 SELL ORDER PLACED! Trailing SL Active.", flush=True)
                 
-                time.sleep(30) # Har 30 second mein scan karega taaki SL/TP jaldi catch ho
+                time.sleep(30)
             except Exception as e:
                 print(f'⚠️ LOOP ERROR: {e}', flush=True)
                 time.sleep(60)
-
 
 def keep_alive_ping():
     while True:
@@ -246,7 +245,7 @@ def keep_alive_ping():
 
 @app.route('/')
 def home(): 
-    return 'Bot is running 100% Automated with Auto-TP and Auto-SL!'
+    return 'Bot is running 100% Automated with 58% Win-Rate TRAILING SL strategy!'
 
 if __name__ == '__main__':
     threading.Thread(target=lambda: SharkLiveBTCBot().run(), daemon=True).start()
