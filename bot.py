@@ -12,7 +12,7 @@ import requests
 app = Flask(__name__)
 
 # ==========================================
-# ⚙️ 3029 ROOT CAUSE FIXED (PAYLOAD SORTING)
+# ⚙️ 400 & 3029 FULLY FIXED (SORTED + REDUCEONLY)
 # ==========================================
 BASE_URL = 'https://api.sharkexchange.in'
 ORDER_ENDPOINT_PATH = '/v1/order/place-order' 
@@ -28,9 +28,9 @@ SECRET_KEY = '09abb3d1bf0ad3f6fe453474a220acd2'
 
 SYMBOL_EXCHANGE = 'BTC_INR'
 LEVERAGE = 5                  
-TEST_QUANTITY = 0.01          # Test ke liye safe 0.01 quantity
+TEST_QUANTITY = 0.01          
 
-class SignatureFixBot:
+class UltimateFixBot:
     def __init__(self):
         pass
 
@@ -44,6 +44,7 @@ class SignatureFixBot:
     def place_order(self, side: str, reduce_only: bool = False):
         endpoint = f'{BASE_URL}{ORDER_ENDPOINT_PATH}'
         
+        # 🧠 BOTH FIXES APPLIED: reduceOnly is back + payload will be sorted!
         payload = {
             'timestamp': int(time.time() * 1000),
             'placeType': 'ORDER_FORM',
@@ -51,17 +52,15 @@ class SignatureFixBot:
             'side': side,
             'symbol': SYMBOL_EXCHANGE,
             'type': 'MARKET',
+            'reduceOnly': reduce_only,    # API needs this strictly as a boolean
             'marginAsset': MARGIN_ASSET,
             'deviceType': DEVICE_TYPE,
             'userCategory': USER_CATEGORY,
             'leverage': LEVERAGE
         }
-        
-        if reduce_only:
-            payload['reduceOnly'] = True
 
         try:
-            # 🧠 DEEP FIX: sort_keys=True is mandatory as per SOP!
+            # 🧠 sort_keys=True (Fixes 3029)
             data_to_sign = json.dumps(payload, sort_keys=True, separators=(',', ':'))
             signature = self.generate_signature(data_to_sign)
             
@@ -71,7 +70,7 @@ class SignatureFixBot:
                 'signature': signature
             }
             
-            print(f'📦 SORTED PAYLOAD SENT: {data_to_sign}', flush=True)
+            print(f'📦 ULTIMATE PAYLOAD SENT: {data_to_sign}', flush=True)
             response = requests.post(endpoint, headers=headers, data=data_to_sign, timeout=15)
             print(f'🟢 ORDER STATUS [{side}]: {response.status_code} | {response.text}', flush=True)
             
@@ -87,7 +86,6 @@ class SignatureFixBot:
         endpoint = f'{BASE_URL}{POSITION_ENDPOINT_PATH}'
         payload = {'timestamp': int(time.time() * 1000)}
         try:
-            # Query string me bhi payload sort karke bhejna hota hai
             query_string = urlencode(sorted(payload.items())) 
             signature = self.generate_signature(query_string)
             headers = {'api-key': API_KEY, 'signature': signature}
@@ -121,7 +119,7 @@ class SignatureFixBot:
             return False, None, 0.0
 
     def run(self):
-        print('🧪 PAYLOAD SORTING FIX BOT STARTED...', flush=True)
+        print('🧪 ULTIMATE API TEST BOT STARTED...', flush=True)
         test_step = 0
         while True:
             try:
@@ -155,9 +153,9 @@ def keep_alive_ping():
 
 @app.route('/')
 def home(): 
-    return '🧪 Signature Fixed Bot is Running! 🚀'
+    return '🧪 Ultimate Test Bot is Running! 🚀'
 
 if __name__ == '__main__':
-    threading.Thread(target=lambda: SignatureFixBot().run(), daemon=True).start()
+    threading.Thread(target=lambda: UltimateFixBot().run(), daemon=True).start()
     threading.Thread(target=keep_alive_ping, daemon=True).start()
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 10000)))
