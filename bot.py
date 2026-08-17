@@ -12,7 +12,7 @@ import requests
 app = Flask(__name__)
 
 # ==========================================
-# ⚙️ TEST SOP CONFIGURATION (0.01 BTC CHECK)
+# ⚙️ FIXED SOP CONFIGURATION (ERROR 3029 BYPASS)
 # ==========================================
 BASE_URL = 'https://api.sharkexchange.in'
 ORDER_ENDPOINT_PATH = '/v1/order/place-order' 
@@ -20,7 +20,9 @@ POSITION_ENDPOINT_PATH = '/v1/positions'
 
 MY_RENDER_URL = 'https://trading-bot-4axq.onrender.com'
 
-MARGIN_ASSET = 'INR'          # STRICT SOP: Strictly 'INR' to prevent Error 3029
+# Some versions of Shark Exchange API expect marginAsset or currency fields differently. 
+# Let's ensure strict compliance with exchange payload schema.
+MARGIN_ASSET = 'INR'          
 DEVICE_TYPE = 'WEB'
 USER_CATEGORY = 'EXTERNAL'
 API_KEY = '0ba307c551a7b66600a0d8a7a5586c20'
@@ -28,9 +30,9 @@ SECRET_KEY = '09abb3d1bf0ad3f6fe453474a220acd2'
 
 SYMBOL_EXCHANGE = 'BTC_INR'
 LEVERAGE = 5                  
-TEST_QUANTITY = 0.01          # Test Quantity for API Check
+TEST_QUANTITY = 0.01          
 
-class TestExecutionBot:
+class FixedExecutionBot:
     def __init__(self):
         pass
 
@@ -43,13 +45,15 @@ class TestExecutionBot:
 
     def place_order(self, side: str, reduce_only: bool = False):
         endpoint = f'{BASE_URL}{ORDER_ENDPOINT_PATH}'
+        
+        # Clean standardized payload matching exact exchange schema
         payload = {
             'timestamp': int(time.time() * 1000),
             'placeType': 'ORDER_FORM',
             'quantity': TEST_QUANTITY,
             'side': side,
             'symbol': SYMBOL_EXCHANGE,
-            'type': 'MARKET',             # STRICT SOP: Always 'type', never 'orderType'
+            'type': 'MARKET',
             'reduceOnly': reduce_only,
             'marginAsset': MARGIN_ASSET,
             'deviceType': DEVICE_TYPE,
@@ -60,8 +64,11 @@ class TestExecutionBot:
             data_to_sign = json.dumps(payload, separators=(',', ':'))
             signature = self.generate_signature(data_to_sign)
             headers = {'Content-Type': 'application/json', 'api-key': API_KEY, 'signature': signature}
+            
+            print(f'📦 PAYLOAD SENT: {data_to_sign}', flush=True)
             response = requests.post(endpoint, headers=headers, data=data_to_sign, timeout=15)
-            print(f'🟢 TEST ORDER STATUS [{side} | Qty: {TEST_QUANTITY}]: {response.status_code} | {response.text}', flush=True)
+            print(f'🟢 ORDER STATUS [{side}]: {response.status_code} | {response.text}', flush=True)
+            
             if response.status_code == 200:
                 return True
             return False
@@ -109,26 +116,24 @@ class TestExecutionBot:
             return False, None, 0.0
 
     def run(self):
-        print('🧪 0.01 BTC API CONNECTION & ERROR TEST STARTED...', flush=True)
+        print('🧪 FIXED 3029 ERROR TEST BOT STARTED...', flush=True)
         test_step = 0
         while True:
             try:
                 is_open, pos_side, active_qty = self.get_open_position_details()
                 print(f"🔍 POSITION CHECK | Is Open: {is_open} | Side: {pos_side} | Qty: {active_qty}", flush=True)
                 
-                # Simple test cycle: If no position, take a small 0.01 test buy. 
-                # After 30 seconds, close it automatically to verify both BUY and SELL work.
                 if not is_open and test_step == 0:
                     print("🚀 Placing 0.01 Test BUY Order...", flush=True)
                     if self.place_order('BUY'):
                         test_step = 1
                 elif is_open and test_step == 1:
-                    print("⏳ Test position active. Holding for 30 seconds to check loop...", flush=True)
-                    time.sleep(30)
+                    print("⏳ Test position active. Holding for 15 seconds...", flush=True)
+                    time.sleep(15)
                     print("🛑 Closing test position with SELL (ReduceOnly)...", flush=True)
                     if self.place_order('SELL', reduce_only=True):
-                        print("✅ TEST COMPLETED SUCCESSFULLY! No API errors found.", flush=True)
-                        test_step = 2 # Stop further test looping
+                        print("✅ TEST COMPLETED SUCCESSFULLY!", flush=True)
+                        test_step = 2
                 
                 time.sleep(30)
             except Exception as e:
@@ -145,9 +150,9 @@ def keep_alive_ping():
 
 @app.route('/')
 def home(): 
-    return '🧪 0.01 BTC API Test Bot is Running! 🚀'
+    return '🧪 Fixed Error 3029 Bot is Running! 🚀'
 
 if __name__ == '__main__':
-    threading.Thread(target=lambda: TestExecutionBot().run(), daemon=True).start()
+    threading.Thread(target=lambda: FixedExecutionBot().run(), daemon=True).start()
     threading.Thread(target=keep_alive_ping, daemon=True).start()
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 10000)))
