@@ -10,7 +10,7 @@ import requests
 app = Flask(__name__)
 
 # ==========================================
-# ⚙️ THE FINAL BOT (CRASH BYPASSED)
+# ⚙️ THE FINAL BOT (EXACT UI PAYLOAD MATCH)
 # ==========================================
 BASE_URL = 'https://api.sharkexchange.in'
 ORDER_ENDPOINT_PATH = '/v1/order/place-order' 
@@ -24,28 +24,26 @@ class FinalBot:
         return hmac.new(api_secret.encode('utf-8'), data_to_sign.encode('utf-8'), hashlib.sha256).hexdigest()
 
     def run(self):
-        print('🧪 FINAL BOT INITIATED (No orderType)...', flush=True)
+        print('🧪 FINAL UI MATCH BOT INITIATED...', flush=True)
         time.sleep(5)
         
         timestamp = str(int(time.time() * 1000))
         
-        # 🧠 THE PERFECT PAYLOAD
+        # 🧠 THE PERFECT PAYLOAD (Copied exactly from your F12 Network Tab)
         params = {
-            'timestamp': timestamp,         
             'placeType': 'ORDER_FORM',
+            'price': 77615.5,             # UI sends a price even for MARKET
             'quantity': 0.002,
-            'side': 'BUY',
-            'symbol': 'BTC_INR',
-            'type': 'MARKET',               # Kept this one
-            # 'orderType': 'MARKET'         <-- HATA DIYA (Server was rejecting this)
             'reduceOnly': False,
-            'marginAsset': 'INR',
-            'deviceType': 'WEB',
-            'userCategory': 'EXTERNAL',
-            'price': 5000000                
+            'side': 'BUY',
+            'symbol': 'BTCUSDT',          # 🚨 NO UNDERSCORE! This was crashing their engine!
+            'type': 'MARKET',
+            'timestamp': timestamp        # Required only for API Signature auth
         }
 
         try:
+            # Sort keys to false to maintain the exact dictionary structure if needed,
+            # but usually json.dumps does it right. We will use separators to remove spaces.
             data_to_sign = json.dumps(params, separators=(',', ':'))
             signature = self.generate_signature(SECRET_KEY, data_to_sign)
             
@@ -55,7 +53,7 @@ class FinalBot:
                 'signature': signature
             }
             
-            print(f'📦 FIRING FINAL PAYLOAD: {data_to_sign}', flush=True)
+            print(f'📦 FIRING EXACT UI PAYLOAD: {data_to_sign}', flush=True)
             response = requests.post(f'{BASE_URL}{ORDER_ENDPOINT_PATH}', headers=headers, data=data_to_sign, timeout=15)
             
             print(f'🟢 FINAL ORDER STATUS: {response.status_code} | {response.text}', flush=True)
