@@ -8,7 +8,7 @@ import random
 import requests
 
 # ==========================================
-# 🚀 REAL LIVE INSTITUTIONAL MASTERMIND BOT (FINAL FIXED)
+# 🚀 REAL LIVE INSTITUTIONAL MASTERMIND BOT (INT PRICE FIX)
 # ==========================================
 BASE_URL = 'https://api.sharkexchange.in'
 ORDER_ENDPOINT = '/v1/order/place-order' 
@@ -35,13 +35,13 @@ class LiveInstitutionalBot:
                 candles = data.get('result', data.get('data', []))
                 if candles:
                     val = float(candles[-1][4])
-                    # Ensure it always has a distinct decimal component (like .25) 
-                    # so JSON serialization string matches the successful test format
-                    base_int = int(val)
-                    return float(base_int) + 0.25
+                    # Return as int if it's a whole number to prevent float signature mismatch
+                    if val.is_integer():
+                        return int(val)
+                    return val
         except Exception:
             pass
-        return 77615.5  # Exact price format from our successful 201 test
+        return 77615  # Clean integer fallback matching successful test logic
 
     def scan_market(self):
         print("🕵️‍♂️ 10 Minds scanning live order book & price action...", flush=True)
@@ -52,10 +52,11 @@ class LiveInstitutionalBot:
     def execute_real_trade(self, side, quantity, price):
         timestamp = str(int(time.time() * 1000))
         
-        # Lock clean float with decimal representation matching successful test
-        clean_price = float(round(price, 2))
-        
-        # Exact dictionary key order from the successful test payload
+        # Force price to integer if it's a whole number to match backend signature expectations
+        clean_price = int(price) if isinstance(price, float) and price.is_integer() else price
+        if isinstance(price, float) and not price.is_integer():
+            clean_price = round(price, 2)
+            
         params = {
             'placeType': 'ORDER_FORM',
             'price': clean_price,             
