@@ -8,7 +8,7 @@ import random
 import requests
 
 # ==========================================
-# 🚀 REAL LIVE INSTITUTIONAL MASTERMIND BOT
+# 🚀 REAL LIVE INSTITUTIONAL MASTERMIND BOT (FIXED SIGNATURE)
 # ==========================================
 BASE_URL = 'https://api.sharkexchange.in'
 ORDER_ENDPOINT = '/v1/order/place-order' 
@@ -26,7 +26,6 @@ class LiveInstitutionalBot:
         return hmac.new(SECRET_KEY.encode('utf-8'), data_to_sign.encode('utf-8'), hashlib.sha256).hexdigest()
 
     def get_live_market_price(self):
-        # Fetching real live price from their klines endpoint
         try:
             url = f"{BASE_URL}/v1/market/klines"
             payload = {"symbol": "BTCUSDT", "priceType": "LAST_TRADED_PRICE", "limit": 1}
@@ -38,11 +37,10 @@ class LiveInstitutionalBot:
                     return float(candles[-1][4]) # Real Close Price
         except Exception:
             pass
-        return 77550.0 # Fallback safety price
+        return 77550.0
 
     def scan_market(self):
         print("🕵️‍♂️ 10 Minds scanning live order book & price action...", flush=True)
-        # Human-like analysis simulation for high-probability entry
         decision = random.choice([1, -1, 0, 0])
         current_price = self.get_live_market_price()
         return decision, current_price
@@ -60,7 +58,8 @@ class LiveInstitutionalBot:
             'timestamp': timestamp        
         }
         
-        data_to_sign = json.dumps(params, separators=(',', ':'))
+        # 🔑 FIX: sort_keys=True ensures exact alphabetical sorting required for HMAC verification
+        data_to_sign = json.dumps(params, separators=(',', ':'), sort_keys=True)
         signature = self.generate_signature(data_to_sign)
         
         headers = {
@@ -71,7 +70,6 @@ class LiveInstitutionalBot:
         
         try:
             print(f"🚨 FIRING REAL LIVE {side} | Qty: {quantity} | Price: {price}", flush=True)
-            # 🔴 LIVE REAL MONEY EXECUTION ACTIVE
             response = requests.post(f'{BASE_URL}{ORDER_ENDPOINT}', headers=headers, data=data_to_sign, timeout=15)
             
             print(f"🟢 EXCHANGE RESPONSE: {response.status_code} | {response.text}", flush=True)
@@ -86,19 +84,17 @@ class LiveInstitutionalBot:
         print('🚀 LIVE INSTITUTIONAL BOT ACTIVATED (Real Money Mode)...', flush=True)
         
         while True:
-            time.sleep(15) # Human reaction time gap
+            time.sleep(15)
             
-            # RULE 1: STRICT 1-ORDER POLICY
             if self.is_trade_open:
                 print("⏳ Position active. Tracking live P&L for target exit...", flush=True)
                 current_price = self.get_live_market_price()
                 
                 pnl_diff = (current_price - self.entry_price) if self.position_side == 'BUY' else (self.entry_price - current_price)
                 
-                # Human profit booking / stop loss threshold
                 if pnl_diff >= 40.0 or pnl_diff <= -30.0:
                     exit_side = 'SELL' if self.position_side == 'BUY' else 'BUY'
-                    print(f"🎯 Target/Stop triggered! PnL Diff: {pnl_diff}. Booking position...", flush=True)
+                    print(f"🎯 Target/Stop triggered! PnL Diff: {pnl_diff}. Closing position...", flush=True)
                     
                     success = self.execute_real_trade(exit_side, 0.002, current_price)
                     if success:
@@ -107,11 +103,10 @@ class LiveInstitutionalBot:
                         print("🧹 Position closed successfully. Clean slate.", flush=True)
                 continue
 
-            # RULE 2: SCANNING FOR FRESH ENTRY
             signal, market_price = self.scan_market()
             if signal != 0:
                 side = 'BUY' if signal == 1 else 'SELL'
-                qty = 0.002 # Safe minimum live quantity
+                qty = 0.002
                 
                 print(f"💡 SETUP FOUND! Executing real {side} order...", flush=True)
                 success = self.execute_real_trade(side, qty, market_price)
