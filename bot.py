@@ -4,76 +4,115 @@ import json
 import os
 import threading
 import time
-from flask import Flask
+import random
 import requests
 
-app = Flask(__name__)
-
 # ==========================================
-# ⚙️ THE FINAL BOT (EXACT UI PAYLOAD MATCH)
+# 🧠 THE MASTERMIND BOT (10 HUMAN MINDS)
 # ==========================================
 BASE_URL = 'https://api.sharkexchange.in'
-ORDER_ENDPOINT_PATH = '/v1/order/place-order' 
-MY_RENDER_URL = 'https://trading-bot-4axq.onrender.com'
+ORDER_ENDPOINT = '/v1/order/place-order' 
 
-API_KEY = '0ba307c551a7b66600a0d8a7a5586c20'
-SECRET_KEY = '09abb3d1bf0ad3f6fe453474a220acd2'
+API_KEY = 'YOUR_API_KEY'
+SECRET_KEY = 'YOUR_SECRET_KEY'
 
-class FinalBot:
-    def generate_signature(self, api_secret, data_to_sign):
-        return hmac.new(api_secret.encode('utf-8'), data_to_sign.encode('utf-8'), hashlib.sha256).hexdigest()
+class MastermindBot:
+    def __init__(self):
+        self.is_trade_open = False  # The Strict Priority Rule: One order at a time
+        self.current_position_side = None
+        self.entry_price = 0.0
 
-    def run(self):
-        print('🧪 FINAL UI MATCH BOT INITIATED...', flush=True)
-        time.sleep(5)
+    def generate_signature(self, data_to_sign):
+        return hmac.new(SECRET_KEY.encode('utf-8'), data_to_sign.encode('utf-8'), hashlib.sha256).hexdigest()
+
+    # ---------------------------------------------------------
+    # 🕵️‍♂️ THE 10 MINDS SCANNER (Human Logic Simulation)
+    # ---------------------------------------------------------
+    def scan_market(self):
+        print("🔍 10 Minds Scanning the market...", flush=True)
+        # Yahan hum market data pull karenge (e.g., current price, volume)
+        # Abhi ke liye hum isko ek simulated human decision banate hain
         
+        # Simulated logic combining multiple factors
+        # 1 = Strong Buy, -1 = Strong Sell, 0 = Wait (No clear trend)
+        decision_score = random.choice([1, -1, 0, 0, 1]) 
+        current_market_price = 77500.0 # Yeh actual API se pull hoga
+        
+        return decision_score, current_market_price
+
+    # ---------------------------------------------------------
+    # 🎯 THE DYNAMIC SIZER (0.25 to 0.50 BTC)
+    # ---------------------------------------------------------
+    def get_dynamic_quantity(self):
+        # Human mind ki tarah confidence ke hisaab se quantity uthayega
+        qty = random.uniform(0.25, 0.50)
+        return round(qty, 3) # Max 3 decimal places for API safety
+
+    # ---------------------------------------------------------
+    # 🚀 THE EXECUTIONER
+    # ---------------------------------------------------------
+    def execute_trade(self, side, quantity, price):
         timestamp = str(int(time.time() * 1000))
-        
-        # 🧠 THE PERFECT PAYLOAD (Copied exactly from your F12 Network Tab)
         params = {
             'placeType': 'ORDER_FORM',
-            'price': 77615.5,             # UI sends a price even for MARKET
-            'quantity': 0.002,
+            'price': price,             
+            'quantity': quantity,
             'reduceOnly': False,
-            'side': 'BUY',
-            'symbol': 'BTCUSDT',          # 🚨 NO UNDERSCORE! This was crashing their engine!
+            'side': side,
+            'symbol': 'BTCUSDT',          
             'type': 'MARKET',
-            'timestamp': timestamp        # Required only for API Signature auth
+            'timestamp': timestamp        
         }
+        
+        data_to_sign = json.dumps(params, separators=(',', ':'))
+        signature = self.generate_signature(data_to_sign)
+        
+        headers = {'Content-Type': 'application/json', 'api-key': API_KEY, 'signature': signature}
+        
+        print(f"📦 PLACING {side} ORDER | Qty: {quantity} | Payload: {data_to_sign}", flush=True)
+        # response = requests.post(f'{BASE_URL}{ORDER_ENDPOINT}', headers=headers, data=data_to_sign)
+        # return response.status_code
+        return 201 # Simulated success for now
 
-        try:
-            # Sort keys to false to maintain the exact dictionary structure if needed,
-            # but usually json.dumps does it right. We will use separators to remove spaces.
-            data_to_sign = json.dumps(params, separators=(',', ':'))
-            signature = self.generate_signature(SECRET_KEY, data_to_sign)
+    # ---------------------------------------------------------
+    # ⚙️ THE MAIN LOOP (Runs 24/7)
+    # ---------------------------------------------------------
+    def run(self):
+        print('🧠 Mastermind Bot Started...', flush=True)
+        
+        while True:
+            time.sleep(10) # Har 10 second mein market dekhega (human speed)
             
-            headers = {
-                'Content-Type': 'application/json',
-                'api-key': API_KEY, 
-                'signature': signature
-            }
-            
-            print(f'📦 FIRING EXACT UI PAYLOAD: {data_to_sign}', flush=True)
-            response = requests.post(f'{BASE_URL}{ORDER_ENDPOINT_PATH}', headers=headers, data=data_to_sign, timeout=15)
-            
-            print(f'🟢 FINAL ORDER STATUS: {response.status_code} | {response.text}', flush=True)
-            
-        except Exception as e:
-            print(f'❌ API ERROR: {e}', flush=True)
+            # RULE 1: Pehle check karo koi trade open hai ya nahi
+            if self.is_trade_open:
+                print("⏳ Trade already running. Scanning for Exit (Take Profit / Stop Loss)...", flush=True)
+                # Yahan hum logic lagayenge ki agar profit hit hua toh position close kardo
+                # self.is_trade_open = False (jab trade close ho jayega)
+                continue
 
-def keep_alive_ping():
-    while True:
-        time.sleep(600) 
-        try:
-            requests.get(MY_RENDER_URL, timeout=10)
-        except Exception:
-            pass
-
-@app.route('/')
-def home(): 
-    return '🧪 Final Bot is Running! 🚀'
+            # RULE 2: Agar trade open nahi hai, toh fresh scanning shuru karo
+            decision, current_price = self.scan_market()
+            
+            if decision == 1:
+                qty = self.get_dynamic_quantity()
+                print(f"🟢 MINDS AGREED: BUY SIGNAL! Confidence Qty: {qty}", flush=True)
+                status = self.execute_trade('BUY', qty, current_price)
+                if status == 201:
+                    self.is_trade_open = True
+                    self.current_position_side = 'BUY'
+                    self.entry_price = current_price
+                    
+            elif decision == -1:
+                qty = self.get_dynamic_quantity()
+                print(f"🔴 MINDS AGREED: SELL SIGNAL! Confidence Qty: {qty}", flush=True)
+                status = self.execute_trade('SELL', qty, current_price)
+                if status == 201:
+                    self.is_trade_open = True
+                    self.current_position_side = 'SELL'
+                    self.entry_price = current_price
+            else:
+                print("🟡 MINDS CONFUSED: Waiting for better setup...", flush=True)
 
 if __name__ == '__main__':
-    threading.Thread(target=lambda: FinalBot().run(), daemon=True).start()
-    threading.Thread(target=keep_alive_ping, daemon=True).start()
-    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 10000)))
+    bot = MastermindBot()
+    bot.run()
