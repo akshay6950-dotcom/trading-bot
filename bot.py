@@ -8,7 +8,7 @@ import random
 import requests
 
 # ==========================================
-# 🚀 REAL LIVE INSTITUTIONAL MASTERMIND BOT (FIXED SIGNATURE)
+# 🚀 REAL LIVE INSTITUTIONAL MASTERMIND BOT (EXACT WORKING ORDER)
 # ==========================================
 BASE_URL = 'https://api.sharkexchange.in'
 ORDER_ENDPOINT = '/v1/order/place-order' 
@@ -34,7 +34,7 @@ class LiveInstitutionalBot:
                 data = res.json()
                 candles = data.get('result', data.get('data', []))
                 if candles:
-                    return float(candles[-1][4]) # Real Close Price
+                    return float(candles[-1][4])
         except Exception:
             pass
         return 77550.0
@@ -47,6 +47,8 @@ class LiveInstitutionalBot:
 
     def execute_real_trade(self, side, quantity, price):
         timestamp = str(int(time.time() * 1000))
+        
+        # 🔑 EXACT WORKING KEY ORDER (No sort_keys=True to match successful test payload)
         params = {
             'placeType': 'ORDER_FORM',
             'price': price,             
@@ -58,8 +60,7 @@ class LiveInstitutionalBot:
             'timestamp': timestamp        
         }
         
-        # 🔑 FIX: sort_keys=True ensures exact alphabetical sorting required for HMAC verification
-        data_to_sign = json.dumps(params, separators=(',', ':'), sort_keys=True)
+        data_to_sign = json.dumps(params, separators=(',', ':'))
         signature = self.generate_signature(data_to_sign)
         
         headers = {
