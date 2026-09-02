@@ -11,7 +11,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Institutional Dynamic Human-Like Trading Bot is Active 24/7!"
+    return "Institutional Organic Desk Bot is Active 24/7!"
 
 def run_web_server():
     port = int(os.environ.get("PORT", 10000))
@@ -60,35 +60,38 @@ class LiveInstitutionalBot:
         return 0.0 
 
     def scan_market(self):
+        """
+        🧠 ORGANIC DESK MIND: Reads live candle velocity and market pulse dynamically, 
+        just like an experienced trader watching order flow and momentum shifts.
+        """
         try:
             url = f"{BASE_URL}/v1/market/klines"
-            payload = {"pair": "BTCUSDT", "interval": "1m", "limit": 15}
+            payload = {"pair": "BTCUSDT", "interval": "1m", "limit": 10}
             res = requests.post(url, json=payload, timeout=5)
             
             if res.status_code in [200, 201]:
                 data = res.json()
-                if isinstance(data, list) and len(data) >= 10:
+                if isinstance(data, list) and len(data) >= 5:
                     closes = [float(c['close']) for c in data if 'close' in c]
                     current_price = closes[-1]
                     
-                    sma_fast = sum(closes[-3:]) / 3   
-                    sma_slow = sum(closes[-10:]) / 10 
-                    prev_price = closes[-2]
+                    # Calculate recent market pulse (velocity of last 3 candles vs background)
+                    recent_velocity = closes[-1] - closes[-3]
+                    avg_fluctuation = sum(abs(closes[i] - closes[i-1]) for i in range(1, len(closes))) / (len(closes) - 1)
                     
-                    print(f"📊 Live Human-Desk Scan | Fast SMA: {sma_fast:.1f} | Slow SMA: {sma_slow:.1f} | Price: {current_price}", flush=True)
+                    print(f"📊 Live Desk Pulse | Current Price: {current_price} | Recent Velocity: {recent_velocity:.1f} | Avg Volatility: {avg_fluctuation:.1f}", flush=True)
                     
-                    # 🚀 Active Human-like Momentum Trigger (> 15 points movement)
-                    if sma_fast > sma_slow and current_price > prev_price and (current_price - closes[-3]) > 10:
-                        print("🚀 Live Desk Signal: Bullish Momentum Triggered! Buying...", flush=True)
+                    # Organic Human-like Trigger: If market velocity outpaces normal noise in either direction
+                    if recent_velocity > (avg_fluctuation * 1.2):
+                        print("🚀 Desk Sentiment: Buyers stepping in aggressively. Executing BUY...", flush=True)
                         return 1, current_price
-                        
-                    elif sma_fast < sma_slow and current_price < prev_price and (closes[-3] - current_price) > 10:
-                        print("🔻 Live Desk Signal: Bearish Momentum Triggered! Shorting...", flush=True)
+                    elif recent_velocity < -(avg_fluctuation * 1.2):
+                        print("🔻 Desk Sentiment: Sellers dumping aggressively. Executing SELL...", flush=True)
                         return -1, current_price
                     else:
                         return 0, current_price
         except Exception as e:
-            print(f"⚠️ Technical Scan Notice: {e}", flush=True)
+            print(f"⚠️ Organic Scan Notice: {e}", flush=True)
             
         current_price = self.get_live_market_price()
         return 0, current_price
@@ -142,10 +145,10 @@ class LiveInstitutionalBot:
             return False
 
     def run(self):
-        print('🚀 DYNAMIC HUMAN-LIKE TRADING BOT ACTIVATED (Active Trades + Smart Profits)...', flush=True)
+        print('🚀 ORGANIC DESK TRADING BOT ACTIVATED (Human-Like Dynamic Execution)...', flush=True)
         
         while True:
-            time.sleep(15)
+            time.sleep(12)
             
             if self.is_trade_open:
                 current_price = self.get_live_market_price()
@@ -154,17 +157,16 @@ class LiveInstitutionalBot:
                     continue
                     
                 price_diff = (current_price - self.real_execution_price) if self.position_side == 'BUY' else (self.real_execution_price - current_price)
-                
-                # 0.015 Quantity Profit Calculation
                 actual_profit_usdt = price_diff * 0.015
                 
-                print(f"⏳ Position active [{self.position_side}]. Entry: {self.real_execution_price} | Current: {current_price} | Points: {price_diff:.1f} | Profit: ${actual_profit_usdt:.2f}", flush=True)
+                print(f"⏳ Live Position [{self.position_side}]. Entry: {self.real_execution_price} | Current: {current_price} | PnL: ${actual_profit_usdt:.2f}", flush=True)
                 
-                # 🎯 SMART REALISTIC TARGET: $8 to $10 profit (~₹700-₹850) | Quick, frequent, covers brokerage easily!
-                # Stop-loss: -$4 USDT (~₹350 tight risk control)
-                if actual_profit_usdt >= 9.0 or actual_profit_usdt <= -4.0:
+                # 🧠 ORGANIC HUMAN EXIT: 
+                # If we are in green and profit covers brokerage comfortably ($6+), or if momentum starts bleeding (-$3.5), 
+                # act like a sharp human trader and exit immediately to protect capital or bank the cash.
+                if actual_profit_usdt >= 6.5 or actual_profit_usdt <= -3.5:
                     exit_side = 'SELL' if self.position_side == 'BUY' else 'BUY'
-                    print(f"🎯 Target/Stop hit! Profit/Loss: ${actual_profit_usdt:.2f}. Securing profit...", flush=True)
+                    print(f"🎯 Desk Decision: Securing position at PnL: ${actual_profit_usdt:.2f}. Cleaning up...", flush=True)
                     
                     success = self.execute_real_trade(exit_side, 0.015, current_price, is_reduce_only=True)
                     if success:
@@ -172,12 +174,12 @@ class LiveInstitutionalBot:
                         self.position_side = None
                         self.entry_price = 0.0
                         self.real_execution_price = 0.0
-                        self.cooldown_end_time = time.time() + 90 # Short 90-second cooldown so trades keep flowing!
-                        print("🧹 Position closed successfully. 90-sec quick cooldown before next trade...", flush=True)
+                        self.cooldown_end_time = time.time() + 60 # Quick 1-min organic breath
+                        print("🧹 Position closed successfully. Desk scanning next wave...", flush=True)
                 continue
 
             if time.time() < self.cooldown_end_time:
-                print("⏳ Quick cooldown active. Scanning next setup...", flush=True)
+                print("⏳ Desk resting for 60 seconds... Watching order flow...", flush=True)
                 continue
 
             signal, market_price = self.scan_market()
@@ -185,7 +187,7 @@ class LiveInstitutionalBot:
                 side = 'BUY' if signal == 1 else 'SELL'
                 qty = 0.015
                 
-                print(f"💡 DYNAMIC SETUP FOUND! Executing real {side} order (Qty: 0.015)...", flush=True)
+                print(f"💡 DESK CONVERGENCE! Executing real {side} order organically...", flush=True)
                 success = self.execute_real_trade(side, qty, market_price, is_reduce_only=False)
                 
                 if success:
@@ -193,7 +195,7 @@ class LiveInstitutionalBot:
                     self.position_side = side
                     self.entry_price = market_price
             elif market_price != 0.0:
-                print(f"💤 Watching live order book. Looking for the next active move...", flush=True)
+                print(f"💤 Desk monitoring live market depth... Waiting for organic volume...", flush=True)
 
 if __name__ == '__main__':
     server_thread = threading.Thread(target=run_web_server)
