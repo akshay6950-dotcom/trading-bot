@@ -4,18 +4,17 @@ import json
 import os
 import threading
 import time
-import random
 import requests
 from flask import Flask
 
 # ==========================================
-# 🚀 REAL LIVE INSTITUTIONAL BOT (0.010 QTY + COOLDOWN FILTER)
+# 🚀 TRUE INSTITUTIONAL MASTERMIND BOT (REAL TECHNICAL MOMENTUM ENGINE)
 # ==========================================
 app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Institutional Mastermind Bot is Active and Running 24/7!"
+    return "Institutional Mastermind Bot with Advanced Technical Analysis is Active 24/7!"
 
 def run_web_server():
     port = int(os.environ.get("PORT", 10000))
@@ -33,7 +32,7 @@ class LiveInstitutionalBot:
         self.position_side = None
         self.entry_price = 0.0
         self.real_execution_price = 0.0
-        self.cooldown_end_time = 0  # 🔧 Smart Cooldown Timer
+        self.cooldown_end_time = 0 
 
     def generate_signature(self, data_to_sign):
         return hmac.new(SECRET_KEY.encode('utf-8'), data_to_sign.encode('utf-8'), hashlib.sha256).hexdigest()
@@ -64,14 +63,45 @@ class LiveInstitutionalBot:
         return 0.0 
 
     def scan_market(self):
-        current_price = self.get_live_market_price()
-        if current_price == 0.0:
-            print("⚠️ Cannot fetch live price. Waiting for network...", flush=True)
-            return 0, 0.0
+        """
+        🧠 INSTITUTIONAL 10-MINDS TECHNICAL SCANNER:
+        Analyzes the last 20 candles to calculate Moving Averages and Momentum Breakouts.
+        No random guessing. Only high-probability institutional setups.
+        """
+        try:
+            url = f"{BASE_URL}/v1/market/klines"
+            payload = {"pair": "BTCUSDT", "interval": "1m", "limit": 20}
+            res = requests.post(url, json=payload, timeout=5)
             
-        print("🕵️‍♂️ 10 Minds scanning live order book & price action...", flush=True)
-        decision = random.choice([1, -1, 0, 0])
-        return decision, current_price
+            if res.status_code in [200, 201]:
+                data = res.json()
+                if isinstance(data, list) and len(data) >= 15:
+                    closes = [float(c['close']) for c in data if 'close' in c]
+                    current_price = closes[-1]
+                    
+                    # Calculate Institutional Moving Averages (Fast vs Slow)
+                    sma_fast = sum(closes[-5:]) / 5   # Last 5 minutes trend
+                    sma_slow = sum(closes[-15:]) / 15 # Last 15 minutes trend
+                    prev_price = closes[-2]
+                    
+                    print(f"📊 Market Analysis | Fast SMA: {sma_fast:.1f} | Slow SMA: {sma_slow:.1f} | Price: {current_price}", flush=True)
+                    
+                    # BULLISH BREAKOUT SETUP (BUY)
+                    if sma_fast > sma_slow and current_price > prev_price and (current_price - closes[-5]) > 15:
+                        print("🚀 Institutional Signal: Strong Bullish Momentum & Breakout Detected!", flush=True)
+                        return 1, current_price
+                        
+                    # BEARISH BREAKOUT SETUP (SELL/SHORT)
+                    elif sma_fast < sma_slow and current_price < prev_price and (closes[-5] - current_price) > 15:
+                        print("🔻 Institutional Signal: Strong Bearish Momentum & Breakdown Detected!", flush=True)
+                        return -1, current_price
+                    else:
+                        return 0, current_price
+        except Exception as e:
+            print(f"⚠️ Technical Scan Notice: {e}", flush=True)
+            
+        current_price = self.get_live_market_price()
+        return 0, current_price
 
     def execute_real_trade(self, side, quantity, price, is_reduce_only=False):
         timestamp = str(int(time.time() * 1000))
@@ -122,7 +152,7 @@ class LiveInstitutionalBot:
             return False
 
     def run(self):
-        print('🚀 LIVE INSTITUTIONAL BOT ACTIVATED (0.010 Qty + Cooldown Mode)...', flush=True)
+        print('🚀 TRUE INSTITUTIONAL BOT ACTIVATED (Advanced Momentum Engine)...', flush=True)
         
         while True:
             time.sleep(15)
@@ -147,12 +177,10 @@ class LiveInstitutionalBot:
                         self.position_side = None
                         self.entry_price = 0.0
                         self.real_execution_price = 0.0
-                        # 🔧 Set a 3-minute (180 seconds) cooldown to prevent back-to-back spam entries
-                        self.cooldown_end_time = time.time() + 180
+                        self.cooldown_end_time = time.time() + 180 # 3 min cooldown
                         print("🧹 Position closed successfully. Cooldown active for 3 minutes...", flush=True)
                 continue
 
-            # 🔧 Check if Cooldown is active
             if time.time() < self.cooldown_end_time:
                 print("⏳ Cooldown active to protect brokerage. Waiting for clean market...", flush=True)
                 continue
@@ -160,9 +188,9 @@ class LiveInstitutionalBot:
             signal, market_price = self.scan_market()
             if signal != 0 and market_price != 0.0:
                 side = 'BUY' if signal == 1 else 'SELL'
-                qty = 0.010  # 🔧 Back to full 0.010 quantity as requested
+                qty = 0.010
                 
-                print(f"💡 SETUP FOUND! Executing real {side} order...", flush=True)
+                print(f"💡 INSTITUTIONAL SETUP CONFIRMED! Executing real {side} order...", flush=True)
                 success = self.execute_real_trade(side, qty, market_price, is_reduce_only=False)
                 
                 if success:
@@ -170,7 +198,7 @@ class LiveInstitutionalBot:
                     self.position_side = side
                     self.entry_price = market_price
             elif market_price != 0.0:
-                print(f"💤 Market consolidating at {market_price}. Institutional patience...", flush=True)
+                print(f"💤 Market consolidating. Institutional minds are waiting for a breakout...", flush=True)
 
 if __name__ == '__main__':
     server_thread = threading.Thread(target=run_web_server)
