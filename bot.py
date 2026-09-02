@@ -9,7 +9,7 @@ import requests
 from flask import Flask
 
 # ==========================================
-# 🚀 REAL LIVE INSTITUTIONAL MASTERMIND BOT (PRICE FEED FIX)
+# 🚀 REAL LIVE INSTITUTIONAL MASTERMIND BOT (FINAL PRICE FEED FIX)
 # ==========================================
 app = Flask(__name__)
 
@@ -41,7 +41,8 @@ class LiveInstitutionalBot:
         # 1. TRY SHARK EXCHANGE API
         try:
             url = f"{BASE_URL}/v1/market/klines"
-            payload = {"symbol": "BTCUSDT", "priceType": "LAST_TRADED_PRICE", "limit": 1}
+            # 🔧 FIX: Exact payload demanded by the Shark 400 Error Log
+            payload = {"pair": "BTCUSDT", "interval": "1m", "limit": 1}
             res = requests.post(url, json=payload, timeout=5)
             if res.status_code == 200:
                 data = res.json()
@@ -54,7 +55,7 @@ class LiveInstitutionalBot:
         except Exception:
             pass
             
-        # 2. BACKUP: BINANCE PUBLIC API (Ensures price never gets stuck)
+        # 2. BACKUP: BINANCE PUBLIC API
         try:
             binance_url = "https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT"
             res = requests.get(binance_url, timeout=5)
@@ -64,7 +65,7 @@ class LiveInstitutionalBot:
         except Exception:
             pass
 
-        return 0.0 # Return 0 if all fails to prevent fake trades
+        return 0.0 
 
     def scan_market(self):
         current_price = self.get_live_market_price()
@@ -110,7 +111,6 @@ class LiveInstitutionalBot:
             print(f"🟢 EXCHANGE RESPONSE: {response.status_code} | {response.text}", flush=True)
             
             if response.status_code == 201:
-                # Get the REAL price the exchange filled the order at
                 try:
                     resp_data = response.json()
                     real_price = float(resp_data.get('price', clean_price))
