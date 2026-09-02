@@ -9,7 +9,7 @@ import requests
 from flask import Flask
 
 # ==========================================
-# 🚀 REAL LIVE INSTITUTIONAL MASTERMIND BOT (STRING REDUCE-ONLY FIX)
+# 🚀 REAL LIVE INSTITUTIONAL BOT (BOOLEAN + 0.005 MARGIN FIX)
 # ==========================================
 app = Flask(__name__)
 
@@ -79,21 +79,17 @@ class LiveInstitutionalBot:
         if isinstance(price, float) and not price.is_integer():
             clean_price = round(price, 2)
             
+        # 🔧 STRICT BOOLEAN FIX: No text, only pure Python True/False
         params = {
             'placeType': 'ORDER_FORM',
             'price': clean_price,             
             'quantity': quantity,
+            'reduceOnly': bool(is_reduce_only), 
             'side': side,
             'symbol': 'BTCUSDT',          
             'type': 'MARKET',
             'timestamp': timestamp        
         }
-        
-        # 🔧 THE ULTIMATE API FIX: Exchange requires string "true", not python's boolean True.
-        # We only send these parameters when we actually want to exit a position.
-        if is_reduce_only:
-            params['reduceOnly'] = "true"
-            params['reduce_only'] = "true" 
         
         data_to_sign = json.dumps(params, separators=(',', ':'))
         signature = self.generate_signature(data_to_sign)
@@ -145,7 +141,8 @@ class LiveInstitutionalBot:
                     exit_side = 'SELL' if self.position_side == 'BUY' else 'BUY'
                     print(f"🎯 Target/Stop triggered! PnL Diff: {pnl_diff:.2f}. Closing position...", flush=True)
                     
-                    success = self.execute_real_trade(exit_side, 0.010, current_price, is_reduce_only=True)
+                    # 🔧 MARGIN FIX: Using 0.005 quantity guarantees you have enough free margin to exit
+                    success = self.execute_real_trade(exit_side, 0.005, current_price, is_reduce_only=True)
                     if success:
                         self.is_trade_open = False
                         self.position_side = None
@@ -157,7 +154,7 @@ class LiveInstitutionalBot:
             signal, market_price = self.scan_market()
             if signal != 0 and market_price != 0.0:
                 side = 'BUY' if signal == 1 else 'SELL'
-                qty = 0.010
+                qty = 0.005  # 🔧 MARGIN FIX: Half quantity to prevent margin locking issues
                 
                 print(f"💡 SETUP FOUND! Executing real {side} order...", flush=True)
                 success = self.execute_real_trade(side, qty, market_price, is_reduce_only=False)
