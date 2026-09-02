@@ -9,7 +9,7 @@ import requests
 from flask import Flask
 
 # ==========================================
-# 🚀 REAL LIVE INSTITUTIONAL MASTERMIND BOT (PNL TRACKER UPGRADE)
+# 🚀 REAL LIVE INSTITUTIONAL MASTERMIND BOT (PRICE FEED FIX)
 # ==========================================
 app = Flask(__name__)
 
@@ -32,11 +32,13 @@ class LiveInstitutionalBot:
         self.is_trade_open = False
         self.position_side = None
         self.entry_price = 0.0
+        self.real_execution_price = 0.0
 
     def generate_signature(self, data_to_sign):
         return hmac.new(SECRET_KEY.encode('utf-8'), data_to_sign.encode('utf-8'), hashlib.sha256).hexdigest()
 
     def get_live_market_price(self):
+        # 1. TRY SHARK EXCHANGE API
         try:
             url = f"{BASE_URL}/v1/market/klines"
             payload = {"symbol": "BTCUSDT", "priceType": "LAST_TRADED_PRICE", "limit": 1}
@@ -44,20 +46,34 @@ class LiveInstitutionalBot:
             if res.status_code == 200:
                 data = res.json()
                 candles = data.get('result', data.get('data', []))
-                if candles:
+                if candles and len(candles) > 0:
                     val = float(candles[-1][4])
-                    if val.is_integer():
-                        return int(val)
-                    return val
-        except Exception as e:
-            print(f"⚠️ Live Price Fetch Error: {e}")
-        # Default fallback, log clearly so we know if it's failing
-        return 77615
+                    return int(val) if val.is_integer() else val
+            else:
+                print(f"⚠️ Shark API Error {res.status_code}: {res.text}", flush=True)
+        except Exception:
+            pass
+            
+        # 2. BACKUP: BINANCE PUBLIC API (Ensures price never gets stuck)
+        try:
+            binance_url = "https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT"
+            res = requests.get(binance_url, timeout=5)
+            if res.status_code == 200:
+                val = float(res.json()['price'])
+                return int(val) if val.is_integer() else val
+        except Exception:
+            pass
+
+        return 0.0 # Return 0 if all fails to prevent fake trades
 
     def scan_market(self):
+        current_price = self.get_live_market_price()
+        if current_price == 0.0:
+            print("⚠️ Cannot fetch live price. Waiting for network...", flush=True)
+            return 0, 0.0
+            
         print("🕵️‍♂️ 10 Minds scanning live order book & price action...", flush=True)
         decision = random.choice([1, -1, 0, 0])
-        current_price = self.get_live_market_price()
         return decision, current_price
 
     def execute_real_trade(self, side, quantity, price):
@@ -92,7 +108,15 @@ class LiveInstitutionalBot:
             response = requests.post(f'{BASE_URL}{ORDER_ENDPOINT}', headers=headers, data=data_to_sign, timeout=15)
             
             print(f"🟢 EXCHANGE RESPONSE: {response.status_code} | {response.text}", flush=True)
+            
             if response.status_code == 201:
+                # Get the REAL price the exchange filled the order at
+                try:
+                    resp_data = response.json()
+                    real_price = float(resp_data.get('price', clean_price))
+                    self.real_execution_price = real_price
+                except:
+                    self.real_execution_price = clean_price
                 return True
             return False
         except Exception as e:
@@ -107,24 +131,30 @@ class LiveInstitutionalBot:
             
             if self.is_trade_open:
                 current_price = self.get_live_market_price()
-                pnl_diff = (current_price - self.entry_price) if self.position_side == 'BUY' else (self.entry_price - current_price)
                 
-                # 🔍 DEBUG PRINT: This will show exactly what the bot is thinking
-                print(f"⏳ Position active [{self.position_side}]. Entry: {self.entry_price} | Current Price: {current_price} | Live PnL Diff: {pnl_diff:.2f}", flush=True)
+                if current_price == 0.0:
+                    print("⚠️ Live price feed disconnected. Holding position safely...", flush=True)
+                    continue
+                    
+                pnl_diff = (current_price - self.real_execution_price) if self.position_side == 'BUY' else (self.real_execution_price - current_price)
+                
+                print(f"⏳ Position active [{self.position_side}]. Entry: {self.real_execution_price} | Current Price: {current_price} | Live PnL Diff: {pnl_diff:.2f}", flush=True)
                 
                 if pnl_diff >= 40.0 or pnl_diff <= -30.0:
                     exit_side = 'SELL' if self.position_side == 'BUY' else 'BUY'
-                    print(f"🎯 Target/Stop triggered! PnL Diff: {pnl_diff}. Closing position...", flush=True)
+                    print(f"🎯 Target/Stop triggered! PnL Diff: {pnl_diff:.2f}. Closing position...", flush=True)
                     
                     success = self.execute_real_trade(exit_side, 0.010, current_price)
                     if success:
                         self.is_trade_open = False
                         self.position_side = None
+                        self.entry_price = 0.0
+                        self.real_execution_price = 0.0
                         print("🧹 Position closed successfully. Clean slate.", flush=True)
                 continue
 
             signal, market_price = self.scan_market()
-            if signal != 0:
+            if signal != 0 and market_price != 0.0:
                 side = 'BUY' if signal == 1 else 'SELL'
                 qty = 0.010
                 
@@ -135,7 +165,7 @@ class LiveInstitutionalBot:
                     self.is_trade_open = True
                     self.position_side = side
                     self.entry_price = market_price
-            else:
+            elif market_price != 0.0:
                 print(f"💤 Market consolidating at {market_price}. Institutional patience...", flush=True)
 
 if __name__ == '__main__':
