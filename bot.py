@@ -9,7 +9,7 @@ import requests
 from flask import Flask
 
 # ==========================================
-# 🚀 REAL LIVE INSTITUTIONAL MASTERMIND BOT (MARGIN/REDUCE-ONLY FIX)
+# 🚀 REAL LIVE INSTITUTIONAL MASTERMIND BOT (STRING REDUCE-ONLY FIX)
 # ==========================================
 app = Flask(__name__)
 
@@ -72,7 +72,6 @@ class LiveInstitutionalBot:
         decision = random.choice([1, -1, 0, 0])
         return decision, current_price
 
-    # 🔧 FIX: Added 'is_reduce_only' parameter to distinguish between Entry and Exit
     def execute_real_trade(self, side, quantity, price, is_reduce_only=False):
         timestamp = str(int(time.time() * 1000))
         
@@ -84,12 +83,17 @@ class LiveInstitutionalBot:
             'placeType': 'ORDER_FORM',
             'price': clean_price,             
             'quantity': quantity,
-            'reduceOnly': is_reduce_only,  # 🔧 FIX: True during exit, False during entry
             'side': side,
             'symbol': 'BTCUSDT',          
             'type': 'MARKET',
             'timestamp': timestamp        
         }
+        
+        # 🔧 THE ULTIMATE API FIX: Exchange requires string "true", not python's boolean True.
+        # We only send these parameters when we actually want to exit a position.
+        if is_reduce_only:
+            params['reduceOnly'] = "true"
+            params['reduce_only'] = "true" 
         
         data_to_sign = json.dumps(params, separators=(',', ':'))
         signature = self.generate_signature(data_to_sign)
@@ -141,7 +145,6 @@ class LiveInstitutionalBot:
                     exit_side = 'SELL' if self.position_side == 'BUY' else 'BUY'
                     print(f"🎯 Target/Stop triggered! PnL Diff: {pnl_diff:.2f}. Closing position...", flush=True)
                     
-                    # 🔧 FIX: Sending is_reduce_only=True bypasses the "Insufficient margin" error
                     success = self.execute_real_trade(exit_side, 0.010, current_price, is_reduce_only=True)
                     if success:
                         self.is_trade_open = False
