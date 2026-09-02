@@ -9,7 +9,7 @@ import requests
 from flask import Flask
 
 # ==========================================
-# 🚀 REAL LIVE INSTITUTIONAL MASTERMIND BOT (QTY: 0.010)
+# 🚀 REAL LIVE INSTITUTIONAL MASTERMIND BOT (PNL TRACKER UPGRADE)
 # ==========================================
 app = Flask(__name__)
 
@@ -49,8 +49,9 @@ class LiveInstitutionalBot:
                     if val.is_integer():
                         return int(val)
                     return val
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"⚠️ Live Price Fetch Error: {e}")
+        # Default fallback, log clearly so we know if it's failing
         return 77615
 
     def scan_market(self):
@@ -105,16 +106,16 @@ class LiveInstitutionalBot:
             time.sleep(15)
             
             if self.is_trade_open:
-                print("⏳ Position active. Tracking live P&L for target exit...", flush=True)
                 current_price = self.get_live_market_price()
-                
                 pnl_diff = (current_price - self.entry_price) if self.position_side == 'BUY' else (self.entry_price - current_price)
+                
+                # 🔍 DEBUG PRINT: This will show exactly what the bot is thinking
+                print(f"⏳ Position active [{self.position_side}]. Entry: {self.entry_price} | Current Price: {current_price} | Live PnL Diff: {pnl_diff:.2f}", flush=True)
                 
                 if pnl_diff >= 40.0 or pnl_diff <= -30.0:
                     exit_side = 'SELL' if self.position_side == 'BUY' else 'BUY'
                     print(f"🎯 Target/Stop triggered! PnL Diff: {pnl_diff}. Closing position...", flush=True)
                     
-                    # Exit position using 0.010 quantity
                     success = self.execute_real_trade(exit_side, 0.010, current_price)
                     if success:
                         self.is_trade_open = False
@@ -125,7 +126,7 @@ class LiveInstitutionalBot:
             signal, market_price = self.scan_market()
             if signal != 0:
                 side = 'BUY' if signal == 1 else 'SELL'
-                qty = 0.010  # Updated trading quantity
+                qty = 0.010
                 
                 print(f"💡 SETUP FOUND! Executing real {side} order...", flush=True)
                 success = self.execute_real_trade(side, qty, market_price)
@@ -135,7 +136,7 @@ class LiveInstitutionalBot:
                     self.position_side = side
                     self.entry_price = market_price
             else:
-                print("💤 Market consolidating. Institutional patience...", flush=True)
+                print(f"💤 Market consolidating at {market_price}. Institutional patience...", flush=True)
 
 if __name__ == '__main__':
     server_thread = threading.Thread(target=run_web_server)
