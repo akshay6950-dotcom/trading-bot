@@ -11,7 +11,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Institutional Asymmetric Profit Bot is Active 24/7!"
+    return "Institutional Dynamic Human-Like Trading Bot is Active 24/7!"
 
 def run_web_server():
     port = int(os.environ.get("PORT", 10000))
@@ -62,28 +62,28 @@ class LiveInstitutionalBot:
     def scan_market(self):
         try:
             url = f"{BASE_URL}/v1/market/klines"
-            payload = {"pair": "BTCUSDT", "interval": "1m", "limit": 25}
+            payload = {"pair": "BTCUSDT", "interval": "1m", "limit": 15}
             res = requests.post(url, json=payload, timeout=5)
             
             if res.status_code in [200, 201]:
                 data = res.json()
-                if isinstance(data, list) and len(data) >= 20:
+                if isinstance(data, list) and len(data) >= 10:
                     closes = [float(c['close']) for c in data if 'close' in c]
                     current_price = closes[-1]
                     
-                    sma_fast = sum(closes[-5:]) / 5   
-                    sma_slow = sum(closes[-20:]) / 20 
+                    sma_fast = sum(closes[-3:]) / 3   
+                    sma_slow = sum(closes[-10:]) / 10 
                     prev_price = closes[-2]
                     
-                    print(f"📊 Asymmetric Scan | Fast SMA: {sma_fast:.1f} | Slow SMA: {sma_slow:.1f} | Price: {current_price}", flush=True)
+                    print(f"📊 Live Human-Desk Scan | Fast SMA: {sma_fast:.1f} | Slow SMA: {sma_slow:.1f} | Price: {current_price}", flush=True)
                     
-                    # 🚀 High-Conviction Breakout Filter (> 35 points explosive shift)
-                    if sma_fast > sma_slow and current_price > prev_price and (current_price - closes[-5]) > 35:
-                        print("🚀 Institutional Signal: EXPLOSIVE Bullish Breakout! Riding the wave...", flush=True)
+                    # 🚀 Active Human-like Momentum Trigger (> 15 points movement)
+                    if sma_fast > sma_slow and current_price > prev_price and (current_price - closes[-3]) > 10:
+                        print("🚀 Live Desk Signal: Bullish Momentum Triggered! Buying...", flush=True)
                         return 1, current_price
                         
-                    elif sma_fast < sma_slow and current_price < prev_price and (closes[-5] - current_price) > 35:
-                        print("🔻 Institutional Signal: EXPLOSIVE Bearish Breakdown! Riding the crash...", flush=True)
+                    elif sma_fast < sma_slow and current_price < prev_price and (closes[-3] - current_price) > 10:
+                        print("🔻 Live Desk Signal: Bearish Momentum Triggered! Shorting...", flush=True)
                         return -1, current_price
                     else:
                         return 0, current_price
@@ -142,7 +142,7 @@ class LiveInstitutionalBot:
             return False
 
     def run(self):
-        print('🚀 ASYMMETRIC PROFIT BOT ACTIVATED (Tight Loss, Massive Gains)...', flush=True)
+        print('🚀 DYNAMIC HUMAN-LIKE TRADING BOT ACTIVATED (Active Trades + Smart Profits)...', flush=True)
         
         while True:
             time.sleep(15)
@@ -155,17 +155,16 @@ class LiveInstitutionalBot:
                     
                 price_diff = (current_price - self.real_execution_price) if self.position_side == 'BUY' else (self.real_execution_price - current_price)
                 
-                # 🔧 Actual USDT Profit Calculation with 0.015 Quantity
+                # 0.015 Quantity Profit Calculation
                 actual_profit_usdt = price_diff * 0.015
                 
                 print(f"⏳ Position active [{self.position_side}]. Entry: {self.real_execution_price} | Current: {current_price} | Points: {price_diff:.1f} | Profit: ${actual_profit_usdt:.2f}", flush=True)
                 
-                # 🎯 ASYMMETRIC TARGET-SL: 
-                # Target: $22+ USDT (~₹1,850+ pure profit, crushing all brokerage!)
-                # Stop-loss: -$5 USDT (~₹400 tight cut if market betrays the setup)
-                if actual_profit_usdt >= 22.0 or actual_profit_usdt <= -5.0:
+                # 🎯 SMART REALISTIC TARGET: $8 to $10 profit (~₹700-₹850) | Quick, frequent, covers brokerage easily!
+                # Stop-loss: -$4 USDT (~₹350 tight risk control)
+                if actual_profit_usdt >= 9.0 or actual_profit_usdt <= -4.0:
                     exit_side = 'SELL' if self.position_side == 'BUY' else 'BUY'
-                    print(f"🎯 Asymmetric Triggered! Profit/Loss: ${actual_profit_usdt:.2f}. Closing position...", flush=True)
+                    print(f"🎯 Target/Stop hit! Profit/Loss: ${actual_profit_usdt:.2f}. Securing profit...", flush=True)
                     
                     success = self.execute_real_trade(exit_side, 0.015, current_price, is_reduce_only=True)
                     if success:
@@ -173,20 +172,20 @@ class LiveInstitutionalBot:
                         self.position_side = None
                         self.entry_price = 0.0
                         self.real_execution_price = 0.0
-                        self.cooldown_end_time = time.time() + 240 # 4 mins cooldown
-                        print("🧹 Position closed successfully. 4-min cooldown active...", flush=True)
+                        self.cooldown_end_time = time.time() + 90 # Short 90-second cooldown so trades keep flowing!
+                        print("🧹 Position closed successfully. 90-sec quick cooldown before next trade...", flush=True)
                 continue
 
             if time.time() < self.cooldown_end_time:
-                print("⏳ Cooldown active. Waiting for supreme explosive setup...", flush=True)
+                print("⏳ Quick cooldown active. Scanning next setup...", flush=True)
                 continue
 
             signal, market_price = self.scan_market()
             if signal != 0 and market_price != 0.0:
                 side = 'BUY' if signal == 1 else 'SELL'
-                qty = 0.015  # 🔧 Upgraded quantity for massive profit impact
+                qty = 0.015
                 
-                print(f"💡 SUPREME SETUP CONFIRMED! Executing real {side} order (Qty: 0.015)...", flush=True)
+                print(f"💡 DYNAMIC SETUP FOUND! Executing real {side} order (Qty: 0.015)...", flush=True)
                 success = self.execute_real_trade(side, qty, market_price, is_reduce_only=False)
                 
                 if success:
@@ -194,7 +193,7 @@ class LiveInstitutionalBot:
                     self.position_side = side
                     self.entry_price = market_price
             elif market_price != 0.0:
-                print(f"💤 Market consolidating. Institutional desks are holding fire for the big wave...", flush=True)
+                print(f"💤 Watching live order book. Looking for the next active move...", flush=True)
 
 if __name__ == '__main__':
     server_thread = threading.Thread(target=run_web_server)
