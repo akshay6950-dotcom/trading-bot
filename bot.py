@@ -9,7 +9,7 @@ import requests
 from flask import Flask
 
 # ==========================================
-# 🚀 REAL LIVE INSTITUTIONAL MASTERMIND BOT (FINAL PRICE FEED FIX)
+# 🚀 REAL LIVE INSTITUTIONAL MASTERMIND BOT (FINAL JSON PARSE FIX)
 # ==========================================
 app = Flask(__name__)
 
@@ -41,18 +41,24 @@ class LiveInstitutionalBot:
         # 1. TRY SHARK EXCHANGE API
         try:
             url = f"{BASE_URL}/v1/market/klines"
-            # 🔧 FIX: Exact payload demanded by the Shark 400 Error Log
             payload = {"pair": "BTCUSDT", "interval": "1m", "limit": 1}
             res = requests.post(url, json=payload, timeout=5)
-            if res.status_code == 200:
+            
+            # 🔧 FIX: Accept 200 and 201 as Success
+            if res.status_code in [200, 201]:
                 data = res.json()
-                candles = data.get('result', data.get('data', []))
-                if candles and len(candles) > 0:
-                    val = float(candles[-1][4])
+                # 🔧 FIX: Parse the new JSON Dictionary format
+                if isinstance(data, list) and len(data) > 0:
+                    val = float(data[-1]['close'])
                     return int(val) if val.is_integer() else val
+                elif isinstance(data, dict): # Fallback if they wrap it in a dict later
+                    candles = data.get('result', data.get('data', []))
+                    if isinstance(candles, list) and len(candles) > 0:
+                        val = float(candles[-1].get('close', candles[-1][4] if isinstance(candles[-1], list) else 0))
+                        return int(val) if val.is_integer() else val
             else:
                 print(f"⚠️ Shark API Error {res.status_code}: {res.text}", flush=True)
-        except Exception:
+        except Exception as e:
             pass
             
         # 2. BACKUP: BINANCE PUBLIC API
