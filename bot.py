@@ -9,7 +9,7 @@ import requests
 from flask import Flask
 
 # ==========================================
-# 🚀 REAL LIVE INSTITUTIONAL MASTERMIND BOT (FINAL JSON PARSE FIX)
+# 🚀 REAL LIVE INSTITUTIONAL MASTERMIND BOT (MARGIN/REDUCE-ONLY FIX)
 # ==========================================
 app = Flask(__name__)
 
@@ -38,30 +38,20 @@ class LiveInstitutionalBot:
         return hmac.new(SECRET_KEY.encode('utf-8'), data_to_sign.encode('utf-8'), hashlib.sha256).hexdigest()
 
     def get_live_market_price(self):
-        # 1. TRY SHARK EXCHANGE API
         try:
             url = f"{BASE_URL}/v1/market/klines"
             payload = {"pair": "BTCUSDT", "interval": "1m", "limit": 1}
             res = requests.post(url, json=payload, timeout=5)
             
-            # 🔧 FIX: Accept 200 and 201 as Success
             if res.status_code in [200, 201]:
                 data = res.json()
-                # 🔧 FIX: Parse the new JSON Dictionary format
                 if isinstance(data, list) and len(data) > 0:
-                    val = float(data[-1]['close'])
-                    return int(val) if val.is_integer() else val
-                elif isinstance(data, dict): # Fallback if they wrap it in a dict later
-                    candles = data.get('result', data.get('data', []))
-                    if isinstance(candles, list) and len(candles) > 0:
-                        val = float(candles[-1].get('close', candles[-1][4] if isinstance(candles[-1], list) else 0))
+                    val = float(data[-1].get('close', 0.0))
+                    if val > 0:
                         return int(val) if val.is_integer() else val
-            else:
-                print(f"⚠️ Shark API Error {res.status_code}: {res.text}", flush=True)
-        except Exception as e:
+        except Exception:
             pass
             
-        # 2. BACKUP: BINANCE PUBLIC API
         try:
             binance_url = "https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT"
             res = requests.get(binance_url, timeout=5)
@@ -70,7 +60,6 @@ class LiveInstitutionalBot:
                 return int(val) if val.is_integer() else val
         except Exception:
             pass
-
         return 0.0 
 
     def scan_market(self):
@@ -83,7 +72,8 @@ class LiveInstitutionalBot:
         decision = random.choice([1, -1, 0, 0])
         return decision, current_price
 
-    def execute_real_trade(self, side, quantity, price):
+    # 🔧 FIX: Added 'is_reduce_only' parameter to distinguish between Entry and Exit
+    def execute_real_trade(self, side, quantity, price, is_reduce_only=False):
         timestamp = str(int(time.time() * 1000))
         
         clean_price = int(price) if isinstance(price, float) and price.is_integer() else price
@@ -94,7 +84,7 @@ class LiveInstitutionalBot:
             'placeType': 'ORDER_FORM',
             'price': clean_price,             
             'quantity': quantity,
-            'reduceOnly': False,
+            'reduceOnly': is_reduce_only,  # 🔧 FIX: True during exit, False during entry
             'side': side,
             'symbol': 'BTCUSDT',          
             'type': 'MARKET',
@@ -111,18 +101,20 @@ class LiveInstitutionalBot:
         }
         
         try:
-            print(f"🚨 FIRING REAL LIVE {side} | Qty: {quantity} | Price: {clean_price}", flush=True)
+            order_type = "EXIT (REDUCE-ONLY)" if is_reduce_only else "ENTRY"
+            print(f"🚨 FIRING REAL LIVE {side} ({order_type}) | Qty: {quantity} | Price: {clean_price}", flush=True)
             response = requests.post(f'{BASE_URL}{ORDER_ENDPOINT}', headers=headers, data=data_to_sign, timeout=15)
             
             print(f"🟢 EXCHANGE RESPONSE: {response.status_code} | {response.text}", flush=True)
             
             if response.status_code == 201:
-                try:
-                    resp_data = response.json()
-                    real_price = float(resp_data.get('price', clean_price))
-                    self.real_execution_price = real_price
-                except:
-                    self.real_execution_price = clean_price
+                if not is_reduce_only:
+                    try:
+                        resp_data = response.json()
+                        real_price = float(resp_data.get('price', clean_price))
+                        self.real_execution_price = real_price
+                    except:
+                        self.real_execution_price = clean_price
                 return True
             return False
         except Exception as e:
@@ -139,7 +131,6 @@ class LiveInstitutionalBot:
                 current_price = self.get_live_market_price()
                 
                 if current_price == 0.0:
-                    print("⚠️ Live price feed disconnected. Holding position safely...", flush=True)
                     continue
                     
                 pnl_diff = (current_price - self.real_execution_price) if self.position_side == 'BUY' else (self.real_execution_price - current_price)
@@ -150,7 +141,8 @@ class LiveInstitutionalBot:
                     exit_side = 'SELL' if self.position_side == 'BUY' else 'BUY'
                     print(f"🎯 Target/Stop triggered! PnL Diff: {pnl_diff:.2f}. Closing position...", flush=True)
                     
-                    success = self.execute_real_trade(exit_side, 0.010, current_price)
+                    # 🔧 FIX: Sending is_reduce_only=True bypasses the "Insufficient margin" error
+                    success = self.execute_real_trade(exit_side, 0.010, current_price, is_reduce_only=True)
                     if success:
                         self.is_trade_open = False
                         self.position_side = None
@@ -165,7 +157,7 @@ class LiveInstitutionalBot:
                 qty = 0.010
                 
                 print(f"💡 SETUP FOUND! Executing real {side} order...", flush=True)
-                success = self.execute_real_trade(side, qty, market_price)
+                success = self.execute_real_trade(side, qty, market_price, is_reduce_only=False)
                 
                 if success:
                     self.is_trade_open = True
