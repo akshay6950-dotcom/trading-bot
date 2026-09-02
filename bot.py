@@ -7,14 +7,11 @@ import time
 import requests
 from flask import Flask
 
-# ==========================================
-# 🚀 TRUE INSTITUTIONAL MASTERMIND BOT (REAL TECHNICAL MOMENTUM ENGINE)
-# ==========================================
 app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Institutional Mastermind Bot with Advanced Technical Analysis is Active 24/7!"
+    return "Institutional Mastermind Bot with Real Dollar Profit Calculation is Active 24/7!"
 
 def run_web_server():
     port = int(os.environ.get("PORT", 10000))
@@ -63,11 +60,6 @@ class LiveInstitutionalBot:
         return 0.0 
 
     def scan_market(self):
-        """
-        🧠 INSTITUTIONAL 10-MINDS TECHNICAL SCANNER:
-        Analyzes the last 20 candles to calculate Moving Averages and Momentum Breakouts.
-        No random guessing. Only high-probability institutional setups.
-        """
         try:
             url = f"{BASE_URL}/v1/market/klines"
             payload = {"pair": "BTCUSDT", "interval": "1m", "limit": 20}
@@ -79,19 +71,16 @@ class LiveInstitutionalBot:
                     closes = [float(c['close']) for c in data if 'close' in c]
                     current_price = closes[-1]
                     
-                    # Calculate Institutional Moving Averages (Fast vs Slow)
-                    sma_fast = sum(closes[-5:]) / 5   # Last 5 minutes trend
-                    sma_slow = sum(closes[-15:]) / 15 # Last 15 minutes trend
+                    sma_fast = sum(closes[-5:]) / 5   
+                    sma_slow = sum(closes[-15:]) / 15 
                     prev_price = closes[-2]
                     
                     print(f"📊 Market Analysis | Fast SMA: {sma_fast:.1f} | Slow SMA: {sma_slow:.1f} | Price: {current_price}", flush=True)
                     
-                    # BULLISH BREAKOUT SETUP (BUY)
                     if sma_fast > sma_slow and current_price > prev_price and (current_price - closes[-5]) > 15:
                         print("🚀 Institutional Signal: Strong Bullish Momentum & Breakout Detected!", flush=True)
                         return 1, current_price
                         
-                    # BEARISH BREAKOUT SETUP (SELL/SHORT)
                     elif sma_fast < sma_slow and current_price < prev_price and (closes[-5] - current_price) > 15:
                         print("🔻 Institutional Signal: Strong Bearish Momentum & Breakdown Detected!", flush=True)
                         return -1, current_price
@@ -152,7 +141,7 @@ class LiveInstitutionalBot:
             return False
 
     def run(self):
-        print('🚀 TRUE INSTITUTIONAL BOT ACTIVATED (Advanced Momentum Engine)...', flush=True)
+        print('🚀 TRUE INSTITUTIONAL BOT ACTIVATED (Real USDT Profit Engine)...', flush=True)
         
         while True:
             time.sleep(15)
@@ -163,13 +152,17 @@ class LiveInstitutionalBot:
                 if current_price == 0.0:
                     continue
                     
-                pnl_diff = (current_price - self.real_execution_price) if self.position_side == 'BUY' else (self.real_execution_price - current_price)
+                price_diff = (current_price - self.real_execution_price) if self.position_side == 'BUY' else (self.real_execution_price - current_price)
                 
-                print(f"⏳ Position active [{self.position_side}]. Entry: {self.real_execution_price} | Current Price: {current_price} | Live PnL Diff: {pnl_diff:.2f}", flush=True)
+                # 🔧 REAL PROFIT CALCULATION: Price Diff * Quantity = Actual USDT Profit
+                actual_profit_usdt = price_diff * 0.01
                 
-                if pnl_diff >= 40.0 or pnl_diff <= -30.0:
+                print(f"⏳ Position active [{self.position_side}]. Entry: {self.real_execution_price} | Current: {current_price} | Actual Profit: ${actual_profit_usdt:.2f}", flush=True)
+                
+                # Target: $6.0 net profit (~₹500) | Stop-loss: -$4.0 loss (~₹350)
+                if actual_profit_usdt >= 6.0 or actual_profit_usdt <= -4.0:
                     exit_side = 'SELL' if self.position_side == 'BUY' else 'BUY'
-                    print(f"🎯 Target/Stop triggered! PnL Diff: {pnl_diff:.2f}. Closing position...", flush=True)
+                    print(f"🎯 Target/Stop triggered! Actual Profit: ${actual_profit_usdt:.2f}. Closing position...", flush=True)
                     
                     success = self.execute_real_trade(exit_side, 0.010, current_price, is_reduce_only=True)
                     if success:
@@ -177,7 +170,7 @@ class LiveInstitutionalBot:
                         self.position_side = None
                         self.entry_price = 0.0
                         self.real_execution_price = 0.0
-                        self.cooldown_end_time = time.time() + 180 # 3 min cooldown
+                        self.cooldown_end_time = time.time() + 180 
                         print("🧹 Position closed successfully. Cooldown active for 3 minutes...", flush=True)
                 continue
 
