@@ -9,7 +9,7 @@ import requests
 from flask import Flask
 
 # ==========================================
-# 🚀 REAL LIVE INSTITUTIONAL BOT (BOOLEAN + 0.005 MARGIN FIX)
+# 🚀 REAL LIVE INSTITUTIONAL BOT (0.010 QTY + COOLDOWN FILTER)
 # ==========================================
 app = Flask(__name__)
 
@@ -33,6 +33,7 @@ class LiveInstitutionalBot:
         self.position_side = None
         self.entry_price = 0.0
         self.real_execution_price = 0.0
+        self.cooldown_end_time = 0  # 🔧 Smart Cooldown Timer
 
     def generate_signature(self, data_to_sign):
         return hmac.new(SECRET_KEY.encode('utf-8'), data_to_sign.encode('utf-8'), hashlib.sha256).hexdigest()
@@ -79,7 +80,6 @@ class LiveInstitutionalBot:
         if isinstance(price, float) and not price.is_integer():
             clean_price = round(price, 2)
             
-        # 🔧 STRICT BOOLEAN FIX: No text, only pure Python True/False
         params = {
             'placeType': 'ORDER_FORM',
             'price': clean_price,             
@@ -122,7 +122,7 @@ class LiveInstitutionalBot:
             return False
 
     def run(self):
-        print('🚀 LIVE INSTITUTIONAL BOT ACTIVATED (Real Money Mode)...', flush=True)
+        print('🚀 LIVE INSTITUTIONAL BOT ACTIVATED (0.010 Qty + Cooldown Mode)...', flush=True)
         
         while True:
             time.sleep(15)
@@ -141,20 +141,26 @@ class LiveInstitutionalBot:
                     exit_side = 'SELL' if self.position_side == 'BUY' else 'BUY'
                     print(f"🎯 Target/Stop triggered! PnL Diff: {pnl_diff:.2f}. Closing position...", flush=True)
                     
-                    # 🔧 MARGIN FIX: Using 0.005 quantity guarantees you have enough free margin to exit
-                    success = self.execute_real_trade(exit_side, 0.005, current_price, is_reduce_only=True)
+                    success = self.execute_real_trade(exit_side, 0.010, current_price, is_reduce_only=True)
                     if success:
                         self.is_trade_open = False
                         self.position_side = None
                         self.entry_price = 0.0
                         self.real_execution_price = 0.0
-                        print("🧹 Position closed successfully. Clean slate.", flush=True)
+                        # 🔧 Set a 3-minute (180 seconds) cooldown to prevent back-to-back spam entries
+                        self.cooldown_end_time = time.time() + 180
+                        print("🧹 Position closed successfully. Cooldown active for 3 minutes...", flush=True)
+                continue
+
+            # 🔧 Check if Cooldown is active
+            if time.time() < self.cooldown_end_time:
+                print("⏳ Cooldown active to protect brokerage. Waiting for clean market...", flush=True)
                 continue
 
             signal, market_price = self.scan_market()
             if signal != 0 and market_price != 0.0:
                 side = 'BUY' if signal == 1 else 'SELL'
-                qty = 0.005  # 🔧 MARGIN FIX: Half quantity to prevent margin locking issues
+                qty = 0.010  # 🔧 Back to full 0.010 quantity as requested
                 
                 print(f"💡 SETUP FOUND! Executing real {side} order...", flush=True)
                 success = self.execute_real_trade(side, qty, market_price, is_reduce_only=False)
