@@ -6,10 +6,21 @@ import threading
 import time
 import random
 import requests
+from flask import Flask
 
 # ==========================================
-# 🚀 REAL LIVE INSTITUTIONAL MASTERMIND BOT (INT PRICE FIX)
+# 🚀 REAL LIVE INSTITUTIONAL MASTERMIND BOT (QTY: 0.010)
 # ==========================================
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "Institutional Mastermind Bot is Active and Running 24/7!"
+
+def run_web_server():
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host='0.0.0.0', port=port)
+
 BASE_URL = 'https://api.sharkexchange.in'
 ORDER_ENDPOINT = '/v1/order/place-order' 
 
@@ -35,13 +46,12 @@ class LiveInstitutionalBot:
                 candles = data.get('result', data.get('data', []))
                 if candles:
                     val = float(candles[-1][4])
-                    # Return as int if it's a whole number to prevent float signature mismatch
                     if val.is_integer():
                         return int(val)
                     return val
         except Exception:
             pass
-        return 77615  # Clean integer fallback matching successful test logic
+        return 77615
 
     def scan_market(self):
         print("🕵️‍♂️ 10 Minds scanning live order book & price action...", flush=True)
@@ -52,7 +62,6 @@ class LiveInstitutionalBot:
     def execute_real_trade(self, side, quantity, price):
         timestamp = str(int(time.time() * 1000))
         
-        # Force price to integer if it's a whole number to match backend signature expectations
         clean_price = int(price) if isinstance(price, float) and price.is_integer() else price
         if isinstance(price, float) and not price.is_integer():
             clean_price = round(price, 2)
@@ -105,7 +114,8 @@ class LiveInstitutionalBot:
                     exit_side = 'SELL' if self.position_side == 'BUY' else 'BUY'
                     print(f"🎯 Target/Stop triggered! PnL Diff: {pnl_diff}. Closing position...", flush=True)
                     
-                    success = self.execute_real_trade(exit_side, 0.002, current_price)
+                    # Exit position using 0.010 quantity
+                    success = self.execute_real_trade(exit_side, 0.010, current_price)
                     if success:
                         self.is_trade_open = False
                         self.position_side = None
@@ -115,7 +125,7 @@ class LiveInstitutionalBot:
             signal, market_price = self.scan_market()
             if signal != 0:
                 side = 'BUY' if signal == 1 else 'SELL'
-                qty = 0.002
+                qty = 0.010  # Updated trading quantity
                 
                 print(f"💡 SETUP FOUND! Executing real {side} order...", flush=True)
                 success = self.execute_real_trade(side, qty, market_price)
@@ -128,5 +138,9 @@ class LiveInstitutionalBot:
                 print("💤 Market consolidating. Institutional patience...", flush=True)
 
 if __name__ == '__main__':
+    server_thread = threading.Thread(target=run_web_server)
+    server_thread.daemon = True
+    server_thread.start()
+
     bot = LiveInstitutionalBot()
     bot.run()
