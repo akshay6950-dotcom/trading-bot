@@ -26,11 +26,11 @@ SECRET_KEY = '09abb3d1bf0ad3f6fe453474a220acd2'
 
 class LiveInstitutionalBot:
     def __init__(self):
-        self.is_trade_open = False  # 🛡️ Wapas False kar diya taaki naye trades dhoonde!
+        self.is_trade_open = False  
         self.position_side = None
         self.real_execution_price = 0.0
         self.cooldown_end_time = 0 
-        self.trade_qty = 0.015  # 🚀 Default quantity wapas 0.015 BTC kar di
+        self.trade_qty = 0.015  
 
     def generate_signature(self, data_to_sign):
         return hmac.new(SECRET_KEY.encode('utf-8'), data_to_sign.encode('utf-8'), hashlib.sha256).hexdigest()
@@ -89,7 +89,7 @@ class LiveInstitutionalBot:
         current_price = self.get_live_market_price()
         return 0, current_price
 
-    def execute_real_trade(self, side, quantity, price, is_reduce_only=False):
+    def execute_real_trade(self, side, quantity, price):
         timestamp = str(int(time.time() * 1000))
         
         clean_price = int(price) if isinstance(price, float) and price.is_integer() else price
@@ -100,7 +100,6 @@ class LiveInstitutionalBot:
             'placeType': 'ORDER_FORM',
             'price': clean_price,             
             'quantity': quantity,
-            # 🔧 reduceOnly parameter hata diya taaki exchange Insufficient Margin na bole
             'side': side,
             'symbol': 'BTCUSDT',          
             'type': 'MARKET',
@@ -117,8 +116,7 @@ class LiveInstitutionalBot:
         }
         
         try:
-            order_type = "EXIT" if is_reduce_only else "ENTRY"
-            print(f"🚨 FIRING REAL LIVE {side} ({order_type}) | Qty: {quantity} | Price: {clean_price}", flush=True)
+            print(f"🚨 FIRING REAL LIVE {side} | Qty: {quantity} | Price: {clean_price}", flush=True)
             response = requests.post(f'{BASE_URL}{ORDER_ENDPOINT}', headers=headers, data=data_to_sign, timeout=15)
             
             print(f"🟢 EXCHANGE RESPONSE: {response.status_code} | {response.text}", flush=True)
@@ -150,13 +148,11 @@ class LiveInstitutionalBot:
                 
                 print(f"⏳ Live Position [{self.position_side}]. Entry: {self.real_execution_price} | Current: {current_price} | PnL: ${actual_profit_usdt:.2f}", flush=True)
                 
-                # 🔧 Normal PnL targets for 0.015 Qty ($6 Target, $3 Stop Loss)
                 if actual_profit_usdt >= 6.0 or actual_profit_usdt <= -3.0:
                     exit_side = 'SELL' if self.position_side == 'BUY' else 'BUY'
                     print(f"🎯 Desk Decision: Securing position at PnL: ${actual_profit_usdt:.2f}. Cleaning up...", flush=True)
                     
-                    # Exit order maarega
-                    success = self.execute_real_trade(exit_side, self.trade_qty, current_price, is_reduce_only=True)
+                    success = self.execute_real_trade(exit_side, self.trade_qty, current_price)
                     
                     if success:
                         self.is_trade_open = False
@@ -177,7 +173,7 @@ class LiveInstitutionalBot:
                 side = 'BUY' if signal == 1 else 'SELL'
                 
                 print(f"💡 DESK CONVERGENCE! Executing real {side} order organically...", flush=True)
-                success = self.execute_real_trade(side, self.trade_qty, market_price, is_reduce_only=False)
+                success = self.execute_real_trade(side, self.trade_qty, market_price)
                 
                 if success:
                     self.is_trade_open = True
