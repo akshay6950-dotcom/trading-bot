@@ -19,18 +19,18 @@ def run_web_server():
 
 BASE_URL = 'https://api.sharkexchange.in'
 ORDER_ENDPOINT = '/v1/order/place-order' 
-POSITION_ENDPOINT = '/v1/position/list' # ya jo bhi exchange ka position endpoint ho
 
 API_KEY = '0ba307c551a7b66600a0d8a7a5586c20'
 SECRET_KEY = '09abb3d1bf0ad3f6fe453474a220acd2'
 
 class LiveInstitutionalBot:
     def __init__(self):
-        self.is_trade_open = False  
-        self.position_side = None
-        self.real_execution_price = 0.0
+        # 🔒 Exchange par jo live position chal rahi hai usko yahan direct lock kar diya
+        self.is_trade_open = True  
+        self.position_side = 'BUY'
+        self.real_execution_price = 77651.5
+        self.trade_qty = 0.03  # Jo 0.03 BTC ki live position hai
         self.cooldown_end_time = 0 
-        self.trade_qty = 0.015  
 
     def generate_signature(self, data_to_sign):
         return hmac.new(SECRET_KEY.encode('utf-8'), data_to_sign.encode('utf-8'), hashlib.sha256).hexdigest()
@@ -59,38 +59,6 @@ class LiveInstitutionalBot:
         except Exception:
             pass
             return 0.0
-
-    def check_exchange_positions(self):
-        """Exchange se live open positions scan karke bot ko sync karega"""
-        timestamp = str(int(time.time() * 1000))
-        params = {"symbol": "BTCUSDT", "timestamp": timestamp}
-        
-        data_to_sign = json.dumps(params, separators=(',', ':'))
-        signature = self.generate_signature(data_to_sign)
-        
-        headers = {
-            'Content-Type': 'application/json',
-            'api-key': API_KEY, 
-            'signature': signature
-        }
-        
-        try:
-            response = requests.post(f'{BASE_URL}{POSITION_ENDPOINT}', headers=headers, data=data_to_sign, timeout=10)
-            if response.status_code in [200, 201]:
-                res_data = response.json()
-                # Agar exchange position list return karta hai
-                positions = res_data.get('data', []) if isinstance(res_data, dict) else res_data
-                for pos in positions:
-                    if float(pos.get('size', 0)) > 0 or float(pos.get('quantity', 0)) > 0:
-                        self.is_trade_open = True
-                        self.position_side = pos.get('side', 'BUY').upper()
-                        self.real_execution_price = float(pos.get('entryPrice', pos.get('price', 0)))
-                        self.trade_qty = float(pos.get('size', pos.get('quantity', self.trade_qty)))
-                        print(f"🔄 Synced Existing Position: {self.position_side} | Entry: {self.real_execution_price} | Qty: {self.trade_qty}", flush=True)
-                        return True
-        except Exception as e:
-            print(f"⚠️ Position Sync Notice: {e}", flush=True)
-        return False
 
     def scan_market(self):
         try:
@@ -162,10 +130,7 @@ class LiveInstitutionalBot:
             return False
 
     def run(self):
-        print('🚀 ORGANIC DESK TRADING BOT ACTIVATED (Auto-Syncing Mode)...', flush=True)
-        
-        # Start hote hi exchange se purani open position check karlo
-        self.check_exchange_positions()
+        print('🚀 ORGANIC DESK TRADING BOT ACTIVATED (Position Locked Mode)...', flush=True)
         
         while True:
             time.sleep(12)
@@ -194,6 +159,7 @@ class LiveInstitutionalBot:
                         self.is_trade_open = False
                         self.position_side = None
                         self.real_execution_price = 0.0
+                        self.trade_qty = 0.015 # Agle fresh trade ke liye wapas default qty set kar di
                         self.cooldown_end_time = time.time() + 60
                         print("🧹 Position closed successfully. Desk ready for next wave...", flush=True)
                     else:
