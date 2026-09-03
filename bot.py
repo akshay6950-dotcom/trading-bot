@@ -12,7 +12,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Institutional Organic Desk Bot V3 is Active 24/7! (Ironclad Shield Mode)"
+    return "Institutional Organic Desk Bot V3 is Active 24/7! (Sniper Balanced Mode)"
 
 def run_web_server():
     port = int(os.environ.get("PORT", 10000))
@@ -29,7 +29,7 @@ class LiveInstitutionalBot:
         self.is_trade_open = False  
         self.position_side = None
         self.real_execution_price = 0.0
-        self.trade_qty = 0.002  # Testing Quantity - Jab confidence aa jaye toh ise badha dena
+        self.trade_qty = 0.03  # Scaled Institutional Quantity
         self.cooldown_end_time = 0 
         self.max_unrealized_pnl = 0.0
 
@@ -79,14 +79,15 @@ class LiveInstitutionalBot:
                     
                     print(f"📊 Live Desk Pulse | Current Price: {current_price} | Micro-Velocity: {recent_velocity:.1f}", flush=True)
                     
-                    if recent_velocity > (avg_fluctuation * 1.3):
+                    # 🎯 BALANCED SNIPER FILTER: Normal se double volume aane par hi trade lega (pehle 1.3 tha, ab 2.0 hai)
+                    if recent_velocity > (avg_fluctuation * 2.0):
                         return 1, current_price
-                    elif recent_velocity < -(avg_fluctuation * 1.3):
+                    elif recent_velocity < -(avg_fluctuation * 2.0):
                         return -1, current_price
                     else:
                         return 0, current_price
         except Exception as e:
-            pass # Keep logs clean from minor API hiccups
+            pass 
             
         current_price = self.get_live_market_price()
         return 0, current_price
@@ -132,7 +133,7 @@ class LiveInstitutionalBot:
             return False
 
     def run(self):
-        print('🚀 FULLY DYNAMIC INSTITUTIONAL BOT ACTIVATED (Ironclad Shield Mode)...', flush=True)
+        print('🚀 FULLY DYNAMIC INSTITUTIONAL BOT ACTIVATED (Sniper Balanced Mode)...', flush=True)
         
         while True:
             try:
@@ -158,13 +159,19 @@ class LiveInstitutionalBot:
                     exit_triggered = False
                     exit_reason = ""
                     
-                    # Target scaling adjusted for small test quantity. You can adjust back to 3.0 and -4.0 once using 0.03 BTC.
-                    if self.max_unrealized_pnl > 0.5 and (self.max_unrealized_pnl - actual_profit_usdt) >= 0.2:
+                    # 🎯 PURE INSTITUTIONAL EXIT LOGIC (NO FIXED DOLLARS)
+                    if self.max_unrealized_pnl > 0:
+                        momentum_break_threshold = max(self.max_unrealized_pnl * 0.30, 1.5)
+                        if (self.max_unrealized_pnl - actual_profit_usdt) >= momentum_break_threshold:
+                            exit_triggered = True
+                            exit_reason = f"Momentum Exhaustion Detected! (Securing ${actual_profit_usdt:.2f})"
+                    
+                    # Risk Floor: Based on structural move (0.15% adverse market move)
+                    dynamic_max_loss = - (self.real_execution_price * 0.0015 * self.trade_qty)
+                    
+                    if actual_profit_usdt <= dynamic_max_loss:
                         exit_triggered = True
-                        exit_reason = f"Trailing Stop Triggered (Securing ${actual_profit_usdt:.2f} Profit)"
-                    elif actual_profit_usdt <= -1.0:
-                        exit_triggered = True
-                        exit_reason = "Dynamic Risk Floor Hit (Cutting Losses)"
+                        exit_reason = f"Dynamic Structural Support Broken (Protecting Capital at ${actual_profit_usdt:.2f})"
                     
                     if exit_triggered:
                         exit_side = 'SELL' if self.position_side == 'BUY' else 'BUY'
@@ -177,21 +184,22 @@ class LiveInstitutionalBot:
                             self.position_side = None
                             self.real_execution_price = 0.0
                             self.max_unrealized_pnl = 0.0
-                            self.cooldown_end_time = time.time() + 60 
+                            # ⏳ SMART COOLDOWN: 3 Minutes (180 seconds) instead of 60 seconds
+                            self.cooldown_end_time = time.time() + 180 
                             print("🧹 Position closed successfully. System Resetting...", flush=True)
                         else:
                             print("⚠️ Exit order failed. Retrying on next loop...", flush=True)
                     continue
 
                 if time.time() < self.cooldown_end_time:
-                    print("⏳ Desk cooling off... Watching order flow...", flush=True)
+                    print("⏳ Desk cooling off (3 Min Sniper Rest)... Watching order flow...", flush=True)
                     continue
 
                 signal, market_price = self.scan_market()
                 if signal != 0 and market_price is not None and market_price != 0.0:
                     side = 'BUY' if signal == 1 else 'SELL'
                     
-                    print(f"💡 DESK CONVERGENCE! Executing real {side} order organically...", flush=True)
+                    print(f"💡 SNIPER CONVERGENCE! Executing real {side} order organically...", flush=True)
                     success = self.execute_real_trade(side, self.trade_qty, market_price, is_exit=False)
                     
                     if success:
@@ -200,7 +208,7 @@ class LiveInstitutionalBot:
                         self.real_execution_price = market_price
                         self.max_unrealized_pnl = 0.0
                 elif market_price is not None and market_price != 0.0:
-                    print(f"💤 Desk monitoring live market depth... Waiting for heavy volume...", flush=True)
+                    print(f"💤 Desk monitoring live market depth... Waiting for heavy institutional volume...", flush=True)
                     
             except Exception as e:
                 print(f"🛡️ IRONCLAD SHIELD ACTIVATED: Caught an unexpected error ({e}). Keeping system alive...", flush=True)
