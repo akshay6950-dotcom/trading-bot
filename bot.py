@@ -21,8 +21,8 @@ def run_web_server():
 BASE_URL = 'https://api.sharkexchange.in'
 ORDER_ENDPOINT = '/v1/order/place-order' 
 
-API_KEY = '0ba307c551a7b66600a0d8a7a5586c20'
-SECRET_KEY = '09abb3d1bf0ad3f6fe453474a220acd2'
+API_KEY = '0ff546be089385f091f4dd5f52444cb1'
+SECRET_KEY = '77b402e85f4ba4951e25753e66a2e670'
 
 class LiveInstitutionalBot:
     def __init__(self):
