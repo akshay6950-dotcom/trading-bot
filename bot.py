@@ -11,7 +11,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Institutional Organic Desk Bot (Synced Mode) is Active 24/7!"
+    return "Institutional Organic Desk Bot is Active 24/7! (Auto-Trading Mode)"
 
 def run_web_server():
     port = int(os.environ.get("PORT", 10000))
@@ -20,15 +20,17 @@ def run_web_server():
 BASE_URL = 'https://api.sharkexchange.in'
 ORDER_ENDPOINT = '/v1/order/place-order' 
 
+# Tera API aur Secret Key
 API_KEY = '0ba307c551a7b66600a0d8a7a5586c20'
 SECRET_KEY = '09abb3d1bf0ad3f6fe453474a220acd2'
 
 class LiveInstitutionalBot:
     def __init__(self):
-        self.is_trade_open = True  # 🛡️ Force locked to True so it immediately manages your 0.03 position!
-        self.position_side = 'BUY'
-        self.real_execution_price = 77345.4  # Matches your current entry price from screenshot
+        self.is_trade_open = False  # 🛡️ Wapas False kar diya taaki naye trades dhoonde!
+        self.position_side = None
+        self.real_execution_price = 0.0
         self.cooldown_end_time = 0 
+        self.trade_qty = 0.015  # 🚀 Default quantity wapas 0.015 BTC kar di
 
     def generate_signature(self, data_to_sign):
         return hmac.new(SECRET_KEY.encode('utf-8'), data_to_sign.encode('utf-8'), hashlib.sha256).hexdigest()
@@ -98,7 +100,7 @@ class LiveInstitutionalBot:
             'placeType': 'ORDER_FORM',
             'price': clean_price,             
             'quantity': quantity,
-            'reduceOnly': bool(is_reduce_only), 
+            # 🔧 reduceOnly parameter hata diya taaki exchange Insufficient Margin na bole
             'side': side,
             'symbol': 'BTCUSDT',          
             'type': 'MARKET',
@@ -115,7 +117,7 @@ class LiveInstitutionalBot:
         }
         
         try:
-            order_type = "EXIT (REDUCE-ONLY)" if is_reduce_only else "ENTRY"
+            order_type = "EXIT" if is_reduce_only else "ENTRY"
             print(f"🚨 FIRING REAL LIVE {side} ({order_type}) | Qty: {quantity} | Price: {clean_price}", flush=True)
             response = requests.post(f'{BASE_URL}{ORDER_ENDPOINT}', headers=headers, data=data_to_sign, timeout=15)
             
@@ -129,7 +131,7 @@ class LiveInstitutionalBot:
             return False
 
     def run(self):
-        print('🚀 ORGANIC DESK TRADING BOT ACTIVATED (Managing 0.03 BTC Active Position)...', flush=True)
+        print('🚀 ORGANIC DESK TRADING BOT ACTIVATED (Auto-Trading Mode)...', flush=True)
         
         while True:
             time.sleep(12)
@@ -141,23 +143,29 @@ class LiveInstitutionalBot:
                     continue
                     
                 price_diff = current_price - self.real_execution_price
-                # 🔧 Calculated for 0.03 BTC total quantity
-                actual_profit_usdt = price_diff * 0.03
+                if self.position_side == 'SELL':
+                    price_diff = -price_diff
+                    
+                actual_profit_usdt = price_diff * self.trade_qty
                 
                 print(f"⏳ Live Position [{self.position_side}]. Entry: {self.real_execution_price} | Current: {current_price} | PnL: ${actual_profit_usdt:.2f}", flush=True)
                 
-                # Organic exit bounds scaled for 0.03 quantity
-                if actual_profit_usdt >= 12.0 or actual_profit_usdt <= -6.0:
-                    exit_side = 'SELL'
+                # 🔧 Normal PnL targets for 0.015 Qty ($6 Target, $3 Stop Loss)
+                if actual_profit_usdt >= 6.0 or actual_profit_usdt <= -3.0:
+                    exit_side = 'SELL' if self.position_side == 'BUY' else 'BUY'
                     print(f"🎯 Desk Decision: Securing position at PnL: ${actual_profit_usdt:.2f}. Cleaning up...", flush=True)
                     
-                    success = self.execute_real_trade(exit_side, 0.03, current_price, is_reduce_only=True)
+                    # Exit order maarega
+                    success = self.execute_real_trade(exit_side, self.trade_qty, current_price, is_reduce_only=True)
+                    
                     if success:
                         self.is_trade_open = False
                         self.position_side = None
                         self.real_execution_price = 0.0
                         self.cooldown_end_time = time.time() + 60
                         print("🧹 Position closed successfully. Desk ready for next wave...", flush=True)
+                    else:
+                        print("⚠️ Exit order failed. Retrying on next loop...", flush=True)
                 continue
 
             if time.time() < self.cooldown_end_time:
@@ -167,10 +175,9 @@ class LiveInstitutionalBot:
             signal, market_price = self.scan_market()
             if signal != 0 and market_price != 0.0:
                 side = 'BUY' if signal == 1 else 'SELL'
-                qty = 0.015
                 
                 print(f"💡 DESK CONVERGENCE! Executing real {side} order organically...", flush=True)
-                success = self.execute_real_trade(side, qty, market_price, is_reduce_only=False)
+                success = self.execute_real_trade(side, self.trade_qty, market_price, is_reduce_only=False)
                 
                 if success:
                     self.is_trade_open = True
