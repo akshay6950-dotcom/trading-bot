@@ -11,7 +11,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Institutional Organic Desk Bot is Active 24/7! (Auto-Trading Mode)"
+    return "Institutional Organic Desk Bot V3 is Active 24/7! (Live Trailing & Dynamic PnL)"
 
 def run_web_server():
     port = int(os.environ.get("PORT", 10000))
@@ -25,12 +25,13 @@ SECRET_KEY = '09abb3d1bf0ad3f6fe453474a220acd2'
 
 class LiveInstitutionalBot:
     def __init__(self):
-        # 🔒 Exchange par jo live position chal rahi hai usko yahan direct lock kar diya
-        self.is_trade_open = True  
-        self.position_side = 'BUY'
-        self.real_execution_price = 77651.5
-        self.trade_qty = 0.03  # Jo 0.03 BTC ki live position hai
+        # 🧠 Institutional Memory & Dynamic Tracking
+        self.is_trade_open = False  
+        self.position_side = None
+        self.real_execution_price = 0.0
+        self.trade_qty = 0.015  
         self.cooldown_end_time = 0 
+        self.max_unrealized_pnl = 0.0  # Live peak profit track karne ke liye
 
     def generate_signature(self, data_to_sign):
         return hmac.new(SECRET_KEY.encode('utf-8'), data_to_sign.encode('utf-8'), hashlib.sha256).hexdigest()
@@ -63,23 +64,24 @@ class LiveInstitutionalBot:
     def scan_market(self):
         try:
             url = f"{BASE_URL}/v1/market/klines"
-            payload = {"pair": "BTCUSDT", "interval": "1m", "limit": 10}
+            payload = {"pair": "BTCUSDT", "interval": "1m", "limit": 5} # Fast tracking
             res = requests.post(url, json=payload, timeout=5)
             
             if res.status_code in [200, 201]:
                 data = res.json()
-                if isinstance(data, list) and len(data) >= 5:
+                if isinstance(data, list) and len(data) >= 3:
                     closes = [float(c['close']) for c in data if 'close' in c]
                     current_price = closes[-1]
                     
-                    recent_velocity = closes[-1] - closes[-3]
+                    recent_velocity = closes[-1] - closes[-2] # More sensitive to immediate volume
                     avg_fluctuation = sum(abs(closes[i] - closes[i-1]) for i in range(1, len(closes))) / (len(closes) - 1)
                     
-                    print(f"📊 Live Desk Pulse | Current Price: {current_price} | Velocity: {recent_velocity:.1f}", flush=True)
+                    print(f"📊 Live Desk Pulse | Current Price: {current_price} | Micro-Velocity: {recent_velocity:.1f}", flush=True)
                     
-                    if recent_velocity > (avg_fluctuation * 1.2):
+                    # Core institutional trigger logic (Sensitive for more trades)
+                    if recent_velocity > (avg_fluctuation * 1.3):
                         return 1, current_price
-                    elif recent_velocity < -(avg_fluctuation * 1.2):
+                    elif recent_velocity < -(avg_fluctuation * 1.3):
                         return -1, current_price
                     else:
                         return 0, current_price
@@ -130,10 +132,10 @@ class LiveInstitutionalBot:
             return False
 
     def run(self):
-        print('🚀 ORGANIC DESK TRADING BOT ACTIVATED (Position Locked Mode)...', flush=True)
+        print('🚀 FULLY DYNAMIC INSTITUTIONAL BOT ACTIVATED (V3 Live PnL Tracking)...', flush=True)
         
         while True:
-            time.sleep(12)
+            time.sleep(10) # Thoda fast scanning loop
             
             if self.is_trade_open:
                 current_price = self.get_live_market_price()
@@ -147,11 +149,29 @@ class LiveInstitutionalBot:
                     
                 actual_profit_usdt = price_diff * self.trade_qty
                 
-                print(f"⏳ Live Position [{self.position_side}]. Entry: {self.real_execution_price} | Current: {current_price} | PnL: ${actual_profit_usdt:.2f}", flush=True)
+                # Live Max PnL Record karna
+                if actual_profit_usdt > self.max_unrealized_pnl:
+                    self.max_unrealized_pnl = actual_profit_usdt
                 
-                if actual_profit_usdt >= 6.0 or actual_profit_usdt <= -3.0:
+                print(f"⏳ Live Position [{self.position_side}] Locked. Entry: {self.real_execution_price} | Current: {current_price} | PnL: ${actual_profit_usdt:.2f} (Peak: ${self.max_unrealized_pnl:.2f})", flush=True)
+                
+                exit_triggered = False
+                exit_reason = ""
+                
+                # 🧠 Dynamic Exit Logic
+                # Agar profit accha khaasa ho chuka hai (>$3) aur achanak se market $1.5 peeche ghum jaye, toh trailing profit book karo
+                if self.max_unrealized_pnl > 3.0 and (self.max_unrealized_pnl - actual_profit_usdt) >= 1.5:
+                    exit_triggered = True
+                    exit_reason = f"Trailing Stop Triggered (Securing ${actual_profit_usdt:.2f} Profit)"
+                
+                # Agar market shuru mein hi ulti direction mein bhaag jaye aur -$4 ka loss dikhaye toh disaster se bacho
+                elif actual_profit_usdt <= -4.0:
+                    exit_triggered = True
+                    exit_reason = "Dynamic Risk Floor Hit (Cutting Losses)"
+                
+                if exit_triggered:
                     exit_side = 'SELL' if self.position_side == 'BUY' else 'BUY'
-                    print(f"🎯 Desk Decision: Securing position at PnL: ${actual_profit_usdt:.2f}. Cleaning up...", flush=True)
+                    print(f"🎯 Desk Decision: {exit_reason}. Cleaning up...", flush=True)
                     
                     success = self.execute_real_trade(exit_side, self.trade_qty, current_price)
                     
@@ -159,17 +179,18 @@ class LiveInstitutionalBot:
                         self.is_trade_open = False
                         self.position_side = None
                         self.real_execution_price = 0.0
-                        self.trade_qty = 0.015 # Agle fresh trade ke liye wapas default qty set kar di
-                        self.cooldown_end_time = time.time() + 60
-                        print("🧹 Position closed successfully. Desk ready for next wave...", flush=True)
+                        self.max_unrealized_pnl = 0.0 # Agle trade ke liye PnL reset
+                        self.cooldown_end_time = time.time() + 60 
+                        print("🧹 Position closed successfully. System Resetting for next convergence...", flush=True)
                     else:
                         print("⚠️ Exit order failed. Retrying on next loop...", flush=True)
                 continue
 
             if time.time() < self.cooldown_end_time:
-                print("⏳ Desk resting... Watching order flow...", flush=True)
+                print("⏳ Desk cooling off... Watching order flow...", flush=True)
                 continue
 
+            # Fully Dynamic Market Scanning
             signal, market_price = self.scan_market()
             if signal != 0 and market_price != 0.0:
                 side = 'BUY' if signal == 1 else 'SELL'
@@ -178,11 +199,13 @@ class LiveInstitutionalBot:
                 success = self.execute_real_trade(side, self.trade_qty, market_price)
                 
                 if success:
+                    # 🔒 Lock system
                     self.is_trade_open = True
                     self.position_side = side
                     self.real_execution_price = market_price
+                    self.max_unrealized_pnl = 0.0
             elif market_price != 0.0:
-                print(f"💤 Desk monitoring live market depth... Waiting for organic volume...", flush=True)
+                print(f"💤 Desk monitoring live market depth... Waiting for heavy volume...", flush=True)
 
 if __name__ == '__main__':
     server_thread = threading.Thread(target=run_web_server)
