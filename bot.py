@@ -100,6 +100,7 @@ class LiveInstitutionalBot:
             'placeType': 'ORDER_FORM',
             'price': clean_price,             
             'quantity': quantity,
+            'reduceOnly': False,      # 🔧 Exchange ki zidd poori karne ke liye False bhej diya
             'side': side,
             'symbol': 'BTCUSDT',          
             'type': 'MARKET',
