@@ -12,137 +12,163 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Institutional Organic Desk Bot V3 is Active 24/7! (Sniper Balanced Mode)"
+    return "Institutional Algo V4 (Volume + Depth Aggregation) Active 24/7!"
 
 def run_web_server():
     port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
 
+# Shark Exchange Endpoints
 BASE_URL = 'https://api.sharkexchange.in'
 ORDER_ENDPOINT = '/v1/order/place-order'
+DEPTH_ENDPOINT = '/v1/market/depth'
+KLINE_ENDPOINT = '/v1/market/klines'
 
-# Teri nayi API keys jo whitelist ho chuki hain
+# TERI API KEYS
 API_KEY = '0ff546be089385f091f4dd5f52444cb1'
 SECRET_KEY = '77b402e85f4ba4951e25753e66a2e670'
 
-class LiveInstitutionalBot:
+# TRADE SETTINGS
+SYMBOL = "BTCUSDT"
+TRADE_QTY = "0.025"  # EXACT QUANTITY REQUESTED
+PROFIT_TARGET = 5.0  # $5 profit
+STOP_LOSS = -2.0     # $2 loss
+
+class InstitutionalWhaleBot:
     def __init__(self):
-        self.api_key = API_KEY
-        self.secret_key = SECRET_KEY
-        self.base_url = BASE_URL
-        self.symbol = "BTCUSDT"  # Change according to your pair
         self.is_position_open = False
         self.entry_price = 0.0
         self.position_side = None
 
     def generate_signature(self, timestamp, payload):
         message = f"{timestamp}{json.dumps(payload, separators=(',', ':'))}"
-        signature = hmac.new(
-            self.secret_key.encode('utf-8'),
-            message.encode('utf-8'),
-            hashlib.sha256
-        ).hexdigest()
-        return signature
+        return hmac.new(SECRET_KEY.encode('utf-8'), message.encode('utf-8'), hashlib.sha256).hexdigest()
 
-    def get_live_market_price(self):
-        # Demo pulse generator - REPLACE with actual live API price fetching
-        # Example: requests.get(f"{self.base_url}/v1/market/ticker?symbol={self.symbol}")
-        import random
-        return round(80900.0 + random.uniform(-50, 50), 1)
+    def get_market_intelligence(self):
+        """Fetch Order Book and Klines to find Institutional Footprints"""
+        try:
+            # 1. Fetch Order Book Depth
+            depth_res = requests.get(f"{BASE_URL}{DEPTH_ENDPOINT}?symbol={SYMBOL}&limit=10")
+            depth_data = depth_res.json()
+            
+            bids = depth_data.get('bids', [])
+            asks = depth_data.get('asks', [])
+            
+            bid_vol = sum([float(b[1]) for b in bids]) if bids else 0
+            ask_vol = sum([float(a[1]) for a in asks]) if asks else 0
+            
+            # 2. Fetch Recent Volume (Klines)
+            kline_res = requests.get(f"{BASE_URL}{KLINE_ENDPOINT}?symbol={SYMBOL}&interval=1m&limit=5")
+            klines = kline_res.json()
+            
+            current_price = float(klines[-1][4]) if klines else 0
+            
+            if len(klines) >= 5:
+                # Average volume of previous 4 candles
+                avg_vol = sum([float(k[5]) for k in klines[:-1]]) / 4
+                current_vol = float(klines[-1][5])
+            else:
+                avg_vol, current_vol = 0, 0
 
-    def execute_real_trade(self, side, qty, price, is_exit=False):
+            return current_price, bid_vol, ask_vol, avg_vol, current_vol
+
+        except Exception as e:
+            print(f"[{time.strftime('%I:%M:%S %p')}] ⚠️ Market Data Error (Retrying...): {str(e)}")
+            return 0, 0, 0, 0, 0
+
+    def execute_real_trade(self, side, is_exit=False):
         try:
             timestamp = str(int(time.time() * 1000))
             payload = {
-                "symbol": self.symbol,
+                "symbol": SYMBOL,
                 "side": side,
-                "orderType": "MARKET", # Using MARKET for immediate execution
-                "qty": str(qty)
+                "orderType": "MARKET",
+                "qty": TRADE_QTY
             }
             
-            # THE MOST CRITICAL FIX: Tell exchange this is an EXIT order, not a new trade
             if is_exit:
-                payload["reduceOnly"] = True
+                payload["reduceOnly"] = True # EXIT MARGIN FIX
 
             signature = self.generate_signature(timestamp, payload)
             
             headers = {
-                "X-API-KEY": self.api_key,
+                "X-API-KEY": API_KEY,
                 "X-SIGNATURE": signature,
                 "X-TIMESTAMP": timestamp,
                 "Content-Type": "application/json"
             }
 
-            print(f"[{time.strftime('%I:%M:%S %p')}] 🚨 FIRING REAL LIVE {side} | Qty: {qty} | Exit: {is_exit}")
+            print(f"[{time.strftime('%I:%M:%S %p')}] 🚨 FIRING {side} | Qty: {TRADE_QTY} | Exit: {is_exit}")
             
-            response = requests.post(f"{self.base_url}{ORDER_ENDPOINT}", headers=headers, json=payload)
+            response = requests.post(f"{BASE_URL}{ORDER_ENDPOINT}", headers=headers, json=payload)
             data = response.json()
 
             if response.status_code == 200 and data.get("code") == 0:
-                print(f"[{time.strftime('%I:%M:%S %p')}] ✅ TRADE SUCCESS! Order ID: {data.get('data', {}).get('orderId')}")
+                print(f"[{time.strftime('%I:%M:%S %p')}] ✅ TRADE SUCCESS! ID: {data.get('data', {}).get('orderId')}")
                 return True
             else:
-                error_msg = data.get("message", "Unknown error")
-                print(f"[{time.strftime('%I:%M:%S %p')}] ❌ EXCHANGE ERROR: {response.status_code} | {error_msg}")
+                print(f"[{time.strftime('%I:%M:%S %p')}] ❌ EXCHANGE ERROR: {response.status_code} | {data.get('message')}")
                 return False
-
         except Exception as e:
-            print(f"[{time.strftime('%I:%M:%S %p')}] ❌ CRITICAL SYSTEM ERROR: {str(e)}")
-            traceback.print_exc()
+            print(f"[{time.strftime('%I:%M:%S %p')}] ❌ EXECUTION ERROR: {str(e)}")
             return False
 
-    def scan_market(self):
-        print(f"[{time.strftime('%I:%M:%S %p')}] 🚀 FULLY DYNAMIC INSTITUTIONAL BOT ACTIVATED (Sniper Balanced Mode)...")
+    def run_strategy(self):
+        print(f"[{time.strftime('%I:%M:%S %p')}] 🚀 INSTITUTIONAL WHALE BOT V4 STARTED | QTY: {TRADE_QTY}")
+        
         while True:
             try:
-                current_price = self.get_live_market_price()
+                price, bid_vol, ask_vol, avg_vol, cur_vol = self.get_market_intelligence()
                 
-                # Bot is empty, looking for entry
+                if price == 0:
+                    time.sleep(2)
+                    continue
+
                 if not self.is_position_open:
-                    print(f"[{time.strftime('%I:%M:%S %p')}] 📊 Live Desk Pulse | Current Price: {current_price} | Desk monitoring live market depth...")
-                    time.sleep(10)
+                    print(f"[{time.strftime('%I:%M:%S %p')}] 🔍 Price: {price} | Bids: {bid_vol:.2f} | Asks: {ask_vol:.2f} | Vol: {cur_vol:.2f}")
                     
-                    # DEMO TRIGGER: Simulating a trigger to show the flow
-                    import random
-                    if random.random() > 0.8: # Artificial entry trigger for testing
-                        print(f"[{time.strftime('%I:%M:%S %p')}] ⚡ SNIPER CONVERGENCE! Executing real SELL order organically...")
-                        success = self.execute_real_trade("SELL", 0.03, current_price, is_exit=False)
-                        if success:
+                    # LOGIC: If Buy Volume is 3x Ask Volume AND Current Volume is huge
+                    if bid_vol > (ask_vol * 3) and cur_vol > (avg_vol * 2.5):
+                        print(f"[{time.strftime('%I:%M:%S %p')}] ⚡ WHALE BUY WALL DETECTED! Executing...")
+                        if self.execute_real_trade("BUY"):
                             self.is_position_open = True
-                            self.entry_price = current_price
+                            self.position_side = "BUY"
+                            self.entry_price = price
+                            
+                    elif ask_vol > (bid_vol * 3) and cur_vol > (avg_vol * 2.5):
+                        print(f"[{time.strftime('%I:%M:%S %p')}] ⚡ WHALE SELL DUMP DETECTED! Executing...")
+                        if self.execute_real_trade("SELL"):
+                            self.is_position_open = True
                             self.position_side = "SELL"
-                
-                # Bot holds a position, looking to exit
+                            self.entry_price = price
+
                 else:
-                    pnl = round(self.entry_price - current_price if self.position_side == "SELL" else current_price - self.entry_price, 2)
-                    print(f"[{time.strftime('%I:%M:%S %p')}] ⏳ Live Position [{self.position_side}] Locked. Entry: {self.entry_price} | Current: {current_price} | PnL: ${pnl}")
-                    time.sleep(10)
+                    pnl = round(price - self.entry_price if self.position_side == "BUY" else self.entry_price - price, 2)
+                    print(f"[{time.strftime('%I:%M:%S %p')}] ⏳ Live [{self.position_side}] | Entry: {self.entry_price} | PnL: ${pnl}")
                     
-                    # Exit logic trigger (e.g., if PnL drops or hits target)
-                    if pnl < -1.00 or pnl > 5.00:
-                        print(f"[{time.strftime('%I:%M:%S %p')}] 🎯 Desk Decision: Momentum Exhaustion Detected! Cleaning up...")
-                        exit_side = "BUY" if self.position_side == "SELL" else "SELL"
+                    # EXIT LOGIC: Profit target, Stop Loss, or Momentum Shift
+                    exit_side = "SELL" if self.position_side == "BUY" else "BUY"
+                    momentum_shifted = (self.position_side == "BUY" and ask_vol > bid_vol * 2) or (self.position_side == "SELL" and bid_vol > ask_vol * 2)
+
+                    if pnl >= PROFIT_TARGET or pnl <= STOP_LOSS or momentum_shifted:
+                        reason = "Target Hit" if pnl >= PROFIT_TARGET else "Stop Loss Hit" if pnl <= STOP_LOSS else "Momentum Exhaustion"
+                        print(f"[{time.strftime('%I:%M:%S %p')}] 🎯 Exiting Trade ({reason}) | Securing PnL...")
                         
-                        # Calling exit with reduceOnly=True
-                        success = self.execute_real_trade(exit_side, 0.03, current_price, is_exit=True)
-                        if success:
+                        if self.execute_real_trade(exit_side, is_exit=True):
                             self.is_position_open = False
-                            self.entry_price = 0.0
                             self.position_side = None
+                            self.entry_price = 0.0
 
             except Exception as e:
-                print(f"[{time.strftime('%I:%M:%S %p')}] ❌ ERROR IN MAIN LOOP: {str(e)}")
-                time.sleep(10)
-
-    def run(self):
-        self.scan_market()
+                print(f"[{time.strftime('%I:%M:%S %p')}] ❌ SYSTEM LOOP ERROR: {str(e)}")
+            
+            # Har pal scan (2 seconds interval for high frequency without rate limiting)
+            time.sleep(2)
 
 if __name__ == "__main__":
-    # Start web server for Render in background
     web_thread = threading.Thread(target=run_web_server)
     web_thread.daemon = True
     web_thread.start()
 
-    # Start bot
-    bot = LiveInstitutionalBot()
-    bot.run()
+    bot = InstitutionalWhaleBot()
+    bot.run_strategy()
