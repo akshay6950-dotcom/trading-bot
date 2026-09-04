@@ -80,7 +80,6 @@ class InstitutionalWhaleBot:
     def get_market_intelligence(self):
         current_price, bid_vol, ask_vol, cur_vol, avg_vol = 0.0, 1.0, 1.0, 1.0, 1.0
         try:
-            # DEPTH FETCH WITH 'b' AND 'a' KEYS
             depth_url = f"{BASE_URL}/v1/market/depth/{SYMBOL}"
             depth_res = requests.get(depth_url, timeout=5)
             d_json = depth_res.json()
@@ -97,7 +96,6 @@ class InstitutionalWhaleBot:
             if isinstance(asks, list) and asks:
                 ask_vol = sum([float(a[1]) for a in asks[:10] if isinstance(a, list) and len(a) > 1])
 
-            # KLINES FETCH
             kline_url = f"{BASE_URL}/v1/market/klines?priceType=MARK_PRICE"
             kline_payload = {"pair": SYMBOL, "interval": "1m", "limit": 5}
             kline_res = requests.post(kline_url, json=kline_payload, headers={'Content-Type': 'application/json'}, timeout=5)
@@ -128,7 +126,7 @@ class InstitutionalWhaleBot:
             return current_price, bid_vol, ask_vol, cur_vol, avg_vol
 
     def run_strategy(self):
-        print(f"[{time.strftime('%I:%M:%S %p')}] 🚀 WHALE BOT DEPLOYED V10 (Dynamic Reversal Mode)", flush=True)
+        print(f"[{time.strftime('%I:%M:%S %p')}] 🚀 WHALE BOT LOCKED V11 (Permanent State)", flush=True)
         while True:
             try:
                 price, bid_vol, ask_vol, cur_vol, avg_vol = self.get_market_intelligence()
@@ -141,7 +139,6 @@ class InstitutionalWhaleBot:
                         print(f"[{time.strftime('%I:%M:%S %p')}] SCAN | Price: {price} | Bids Vol: {bid_vol:.1f} | Asks Vol: {ask_vol:.1f}", flush=True)
                     
                     if not self.is_position_open:
-                        # Entry Logic: Institutional Imbalance (1.5x)
                         if bid_vol > (ask_vol * 1.5):
                             print(f"[{time.strftime('%I:%M:%S %p')}] ⚡ BUY SIGNAL DETECTED!", flush=True)
                             if self.execute_real_trade("BUY"):
@@ -156,7 +153,6 @@ class InstitutionalWhaleBot:
                                 self.position_side = "SELL"
                                 self.entry_price = price
                     else:
-                        # Dynamic Reversal Exit Logic (Market-Driven Flow Flip)
                         if self.position_side == "BUY" and ask_vol > (bid_vol * 1.5):
                             print(f"[{time.strftime('%I:%M:%S %p')}] 🔄 REVERSAL EXIT TRIGGER (Sellers Took Over) | PnL: ${pnl}", flush=True)
                             if self.execute_real_trade("SELL", is_exit=True):
@@ -179,7 +175,7 @@ if __name__ == "__main__":
     try:
         my_ip = requests.get('https://api.ipify.org', timeout=5).text
         print(f"\n=======================================================")
-        print(f"🚀 RENDER SERVER IP: {my_ip} (Ensure this matches Shark whitelist!)")
+        print(f"🚀 RENDER SERVER IP: {my_ip}")
         print(f"=======================================================\n")
     except:
         pass
