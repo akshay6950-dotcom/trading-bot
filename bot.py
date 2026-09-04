@@ -7,9 +7,6 @@ import threading
 import os
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
-# ==========================================
-# 1. RENDER DUMMY WEB SERVER
-# ==========================================
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -21,9 +18,6 @@ def start_server():
     server = HTTPServer(('0.0.0.0', port), HealthCheckHandler)
     server.serve_forever()
 
-# ==========================================
-# 2. BOT CONFIGURATION & API DETAILS
-# ==========================================
 BASE_URL = 'https://api.sharkexchange.in'
 SYMBOL = "BTCUSDT"
 TRADE_QTY = 0.002
@@ -89,29 +83,37 @@ class InstitutionalWhaleBot:
     def get_market_intelligence(self):
         current_price, bid_vol, ask_vol, cur_vol, avg_vol = 0.0, 1.0, 1.0, 1.0, 1.0
         try:
-            # Sahi DEPTH URL (Bina query parameter ke)
+            # 1. FETCH DEPTH (Robust parsing supporting nested data wrappers)
             depth_url = f"{BASE_URL}/v1/market/depth/{SYMBOL}"
             depth_res = requests.get(depth_url, timeout=5)
             d_json = depth_res.json()
             
-            if isinstance(d_json, dict) and 'bids' in d_json:
-                bids = d_json.get('bids', [])
-                asks = d_json.get('asks', [])
-                bid_vol = sum([float(b[1]) for b in bids[:10]]) if bids else 1.0
-                ask_vol = sum([float(a[1]) for a in asks[:10]]) if asks else 1.0
+            # Extract data container if wrapped inside 'data' or root dict
+            d_data = d_json.get('data', d_json) if isinstance(d_json, dict) else {}
+            bids = d_data.get('bids', [])
+            asks = d_data.get('asks', [])
+            
+            if bids:
+                bid_vol = sum([float(b[1]) for b in bids[:10]])
+            if asks:
+                ask_vol = sum([float(a[1]) for a in asks[:10]])
 
-            # Sahi KLINE POST Request
+            # 2. FETCH KLINES (Robust parsing for POST request)
             kline_url = f"{BASE_URL}/v1/market/klines?priceType=MARK_PRICE"
             kline_payload = {"pair": SYMBOL, "interval": "1m", "limit": 5}
             kline_res = requests.post(kline_url, json=kline_payload, headers={'Content-Type': 'application/json'}, timeout=5)
             k_json = kline_res.json()
+            
+            k_list = k_json.get('data', k_json) if isinstance(k_json, (dict, list)) else []
+            if isinstance(k_list, dict):
+                k_list = k_list.get('klines', k_list.get('list', []))
 
-            if isinstance(k_json, list) and len(k_json) > 0:
-                latest = k_json[-1]
+            if isinstance(k_list, list) and len(k_list) > 0:
+                latest = k_list[-1]
                 current_price = float(latest[4]) if isinstance(latest, list) else float(latest.get('close', 0.0))
                 cur_vol = float(latest[5]) if isinstance(latest, list) else float(latest.get('volume', 1.0))
-                if len(k_json) > 1:
-                    avg_vol = sum([float(k[5]) if isinstance(k, list) else float(k.get('volume', 1.0)) for k in k_json[:-1]]) / (len(k_json) - 1)
+                if len(k_list) > 1:
+                    avg_vol = sum([float(k[5]) if isinstance(k, list) else float(k.get('volume', 1.0)) for k in k_list[:-1]]) / (len(k_list) - 1)
 
             return current_price, bid_vol, ask_vol, cur_vol, avg_vol
         except Exception as e:
@@ -119,7 +121,7 @@ class InstitutionalWhaleBot:
             return current_price, bid_vol, ask_vol, cur_vol, avg_vol
 
     def run_strategy(self):
-        print(f"[{time.strftime('%I:%M:%S %p')}] 🚀 WHALE BOT DEPLOYED V4 | QTY: {TRADE_QTY}", flush=True)
+        print(f"[{time.strftime('%I:%M:%S %p')}] 🚀 WHALE BOT DEPLOYED V5 | QTY: {TRADE_QTY}", flush=True)
         
         while True:
             try:
@@ -162,7 +164,7 @@ if __name__ == "__main__":
     try:
         my_ip = requests.get('https://api.ipify.org', timeout=5).text
         print(f"\n=======================================================")
-        print(f"🚀 RENDER SERVER IP: {my_ip} (Match this with Shark!)")
+        print(f"🚀 RENDER SERVER IP: {my_ip}")
         print(f"=======================================================\n")
     except:
         pass
