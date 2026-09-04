@@ -80,32 +80,22 @@ class InstitutionalWhaleBot:
     def get_market_intelligence(self):
         current_price, bid_vol, ask_vol, cur_vol, avg_vol = 0.0, 1.0, 1.0, 1.0, 1.0
         try:
-            # DEPTH FETCH & RAW PRINT FOR DEBUGGING
+            # DEPTH FETCH WITH 'b' AND 'a' KEYS
             depth_url = f"{BASE_URL}/v1/market/depth/{SYMBOL}"
             depth_res = requests.get(depth_url, timeout=5)
             d_json = depth_res.json()
             
-            # Print raw response once to see keys
-            print(f"DEBUG DEPTH RAW: {d_json}", flush=True)
-
             bids, asks = [], []
             if isinstance(d_json, dict):
-                # Check multiple possible keys for depth data
-                d_data = d_json.get('data', d_json.get('result', d_json))
+                d_data = d_json.get('data', d_json)
                 if isinstance(d_data, dict):
-                    bids = d_data.get('bids', d_data.get('b', []))
-                    asks = d_data.get('asks', d_data.get('a', []))
-                elif isinstance(d_data, list) and len(d_data) >= 2:
-                    bids = d_data[0]
-                    asks = d_data[1]
-            elif isinstance(d_json, list) and len(d_json) >= 2:
-                bids = d_json[0]
-                asks = d_json[1]
+                    bids = d_data.get('b', [])
+                    asks = d_data.get('a', [])
 
             if isinstance(bids, list) and bids:
-                bid_vol = sum([float(b[1]) for b in bids[:10] if isinstance(b, (list, tuple)) and len(b) > 1])
+                bid_vol = sum([float(b[1]) for b in bids[:10] if isinstance(b, list) and len(b) > 1])
             if isinstance(asks, list) and asks:
-                ask_vol = sum([float(a[1]) for a in asks[:10] if isinstance(a, (list, tuple)) and len(a) > 1])
+                ask_vol = sum([float(a[1]) for a in asks[:10] if isinstance(a, list) and len(a) > 1])
 
             # KLINES FETCH
             kline_url = f"{BASE_URL}/v1/market/klines?priceType=MARK_PRICE"
@@ -117,7 +107,7 @@ class InstitutionalWhaleBot:
             if isinstance(k_json, list):
                 k_list = k_json
             elif isinstance(k_json, dict):
-                k_data = k_json.get('data', k_json.get('result', k_json))
+                k_data = k_json.get('data', k_json)
                 if isinstance(k_data, list):
                     k_list = k_data
                 elif isinstance(k_data, dict):
@@ -135,21 +125,65 @@ class InstitutionalWhaleBot:
 
             return current_price, bid_vol, ask_vol, cur_vol, avg_vol
         except Exception as e:
-            print(f"⚠️ PARSE ERROR: {str(e)}", flush=True)
             return current_price, bid_vol, ask_vol, cur_vol, avg_vol
 
     def run_strategy(self):
-        print(f"[{time.strftime('%I:%M:%S %p')}] 🚀 WHALE BOT DEPLOYED V8", flush=True)
+        print(f"[{time.strftime('%I:%M:%S %p')}] 🚀 WHALE BOT DEPLOYED V10 (Dynamic Reversal Mode)", flush=True)
         while True:
             try:
                 price, bid_vol, ask_vol, cur_vol, avg_vol = self.get_market_intelligence()
                 if price > 0:
-                    print(f"[{time.strftime('%I:%M:%S %p')}] SCAN | Price: {price} | Bids Vol: {bid_vol:.1f} | Asks Vol: {ask_vol:.1f}", flush=True)
+                    pnl = 0.0
+                    if self.is_position_open:
+                        pnl = round(price - self.entry_price if self.position_side == "BUY" else self.entry_price - price, 2)
+                        print(f"[{time.strftime('%I:%M:%S %p')}] SCAN | Price: {price} | Bids: {bid_vol:.1f} | Asks: {ask_vol:.1f} | POS: {self.position_side} | PnL: ${pnl}", flush=True)
+                    else:
+                        print(f"[{time.strftime('%I:%M:%S %p')}] SCAN | Price: {price} | Bids Vol: {bid_vol:.1f} | Asks Vol: {ask_vol:.1f}", flush=True)
+                    
+                    if not self.is_position_open:
+                        # Entry Logic: Institutional Imbalance (1.5x)
+                        if bid_vol > (ask_vol * 1.5):
+                            print(f"[{time.strftime('%I:%M:%S %p')}] ⚡ BUY SIGNAL DETECTED!", flush=True)
+                            if self.execute_real_trade("BUY"):
+                                self.is_position_open = True
+                                self.position_side = "BUY"
+                                self.entry_price = price
+                                
+                        elif ask_vol > (bid_vol * 1.5):
+                            print(f"[{time.strftime('%I:%M:%S %p')}] ⚡ SELL SIGNAL DETECTED!", flush=True)
+                            if self.execute_real_trade("SELL"):
+                                self.is_position_open = True
+                                self.position_side = "SELL"
+                                self.entry_price = price
+                    else:
+                        # Dynamic Reversal Exit Logic (Market-Driven Flow Flip)
+                        if self.position_side == "BUY" and ask_vol > (bid_vol * 1.5):
+                            print(f"[{time.strftime('%I:%M:%S %p')}] 🔄 REVERSAL EXIT TRIGGER (Sellers Took Over) | PnL: ${pnl}", flush=True)
+                            if self.execute_real_trade("SELL", is_exit=True):
+                                self.is_position_open = False
+                                self.position_side = None
+                                self.entry_price = 0.0
+                                
+                        elif self.position_side == "SELL" and bid_vol > (ask_vol * 1.5):
+                            print(f"[{time.strftime('%I:%M:%S %p')}] 🔄 REVERSAL EXIT TRIGGER (Buyers Took Over) | PnL: ${pnl}", flush=True)
+                            if self.execute_real_trade("BUY", is_exit=True):
+                                self.is_position_open = False
+                                self.position_side = None
+                                self.entry_price = 0.0
+
             except Exception as e:
                 pass
-            time.sleep(6)
+            time.sleep(4)
 
 if __name__ == "__main__":
+    try:
+        my_ip = requests.get('https://api.ipify.org', timeout=5).text
+        print(f"\n=======================================================")
+        print(f"🚀 RENDER SERVER IP: {my_ip} (Ensure this matches Shark whitelist!)")
+        print(f"=======================================================\n")
+    except:
+        pass
+
     threading.Thread(target=start_server, daemon=True).start()
     bot = InstitutionalWhaleBot()
     bot.run_strategy()
