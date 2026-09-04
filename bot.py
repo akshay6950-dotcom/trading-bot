@@ -1,6 +1,28 @@
-def get_market_intelligence(self):
+import time
+import requests
+
+BASE_URL = 'https://api.sharkexchange.in'
+DEPTH_ENDPOINT = '/v1/market/depth'
+KLINE_ENDPOINT = '/v1/market/klines'
+SYMBOL = "BTCUSDT"
+TRADE_QTY = 0.025
+PROFIT_TARGET = 5.0  
+STOP_LOSS = -2.0     
+
+class InstitutionalWhaleBot:
+    def __init__(self):
+        self.is_position_open = False
+        self.position_side = None
+        self.entry_price = 0.0
+
+    def execute_real_trade(self, side, is_exit=False):
+        # YAHAN TERA ASLI ORDER PLACE KARNE WALA API CODE AAYEGA
+        # Abhi ke liye yeh print karega taaki logs mein entry dikhe
+        print(f"[{time.strftime('%I:%M:%S %p')}] 🚀 EXECUTING {side} ORDER | Qty: {TRADE_QTY}", flush=True)
+        return True
+
+    def get_market_intelligence(self):
         try:
-            # 1. Fetch Order Book Depth safely
             depth_res = requests.get(f"{BASE_URL}{DEPTH_ENDPOINT}?symbol={SYMBOL}&limit=5", timeout=3)
             res_json = depth_res.json()
             
@@ -13,7 +35,6 @@ def get_market_intelligence(self):
             bid_vol = sum([float(b[1]) for b in bids]) if bids else 10.0
             ask_vol = sum([float(a[1]) for a in asks]) if asks else 10.0
             
-            # 2. Fetch Recent Volume safely
             kline_res = requests.get(f"{BASE_URL}{KLINE_ENDPOINT}?symbol={SYMBOL}&interval=1m&limit=5", timeout=3)
             k_json = kline_res.json()
             
@@ -34,7 +55,7 @@ def get_market_intelligence(self):
             return current_price, bid_vol, ask_vol, avg_vol, current_vol
 
         except Exception as e:
-            print(f"[{time.strftime('%I:%M:%S %p')}] API Error: {str(e)}")
+            print(f"[{time.strftime('%I:%M:%S %p')}] API Error: {str(e)}", flush=True)
             return 81000.0, 10.0, 10.0, 1.0, 1.0
 
     def run_strategy(self):
@@ -44,11 +65,9 @@ def get_market_intelligence(self):
             try:
                 price, bid_vol, ask_vol, avg_vol, cur_vol = self.get_market_intelligence()
                 
-                # force flush ensures it prints instantly on Render
                 print(f"[{time.strftime('%I:%M:%S %p')}] SCAN | Price: {price} | Bids: {bid_vol:.1f} | Asks: {ask_vol:.1f} | Vol: {cur_vol:.1f}", flush=True)
 
                 if not self.is_position_open:
-                    # Balanced condition: 1.5x imbalance & 1.2x volume spike
                     if bid_vol > (ask_vol * 1.5) and cur_vol > (avg_vol * 1.2):
                         print(f"[{time.strftime('%I:%M:%S %p')}] ⚡ BUY TRIGGER FIRED!", flush=True)
                         if self.execute_real_trade("BUY"):
@@ -80,3 +99,7 @@ def get_market_intelligence(self):
                 print(f"[{time.strftime('%I:%M:%S %p')}] Loop Exception: {str(e)}", flush=True)
             
             time.sleep(3)
+
+if __name__ == "__main__":
+    bot = InstitutionalWhaleBot()
+    bot.run_strategy()
